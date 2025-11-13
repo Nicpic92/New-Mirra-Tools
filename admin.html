@@ -4,55 +4,93 @@
     <meta charset="UTF-8">
     <title>Admin - Report Configurations</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- We need SheetJS here to read the XLSX headers -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <style>
+        .mapping-table th { width: 30%; }
+    </style>
 </head>
 <body>
-    <div class="container mt-5">
+    <div class="container mt-5 mb-5">
         <h1 class="mb-4">Report Configurations</h1>
-        <p>Manage the saved settings for the claims dashboard.</p>
+        <p>Manage the saved settings for the claims dashboard. Create a configuration for each client, upload a sample report to map their column headers, and save.</p>
         
-        <div class="row">
-            <!-- List of existing configurations -->
-            <div class="col-md-6">
-                <h2>Existing Configurations</h2>
-                <ul class="list-group" id="configList">
-                    <!-- Configurations will be loaded here -->
-                </ul>
-            </div>
-
+        <div class="row g-5">
             <!-- Form to add or edit a configuration -->
-            <div class="col-md-6">
+            <div class="col-md-7">
                 <div class="card">
                     <div class="card-body">
                         <h2 id="formTitle">Add New Configuration</h2>
                         <form id="configForm">
                             <input type="hidden" id="configId">
+                            
+                            <!-- Step 1: Basic Info -->
+                            <h5>Step 1: Basic Information</h5>
                             <div class="mb-3">
                                 <label for="configName" class="form-label">Configuration Name</label>
                                 <input type="text" class="form-control" id="configName" placeholder="e.g., Q1 Report, High-Risk Providers" required>
                             </div>
                             <div class="mb-3">
-                                <label for="clientName" class="form-label">Client Name</label>
+                                <label for="clientName" class="form-label">Client Name (for PDF Reports)</label>
                                 <input type="text" class="form-control" id="clientName" placeholder="Client Name for Reports">
                             </div>
                             <div class="mb-3">
                                 <label for="agingCalc" class="form-label">Aging Calculation Basis</label>
                                 <select class="form-select" id="agingCalc">
                                     <option value="legacy">31+ (Legacy/30-Day)</option>
-                                    <option value="cms">31-59 / 60+ (CMS/60-Day)</option>
+                                    <option value="cms" selected>31-59 / 60+ (CMS/60-Day)</option>
                                 </select>
                             </div>
+                            <hr>
+
+                            <!-- Step 2: Upload and Map -->
+                            <h5>Step 2: Upload Sample Report to Map Columns</h5>
+                             <div class="mb-3">
+                                <label for="reportUploader" class="form-label">Upload XLSX File</label>
+                                <input class="form-control" type="file" id="reportUploader" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+                                <div class="form-text">Upload a sample report to automatically detect its column headers for mapping.</div>
+                            </div>
+
+                            <div id="mappingSection" class="mt-4" style="display: none;">
+                                <h6>Detected Headers:</h6>
+                                <div id="detectedHeaders" class="mb-3"></div>
+                                
+                                <h6>Map Your Fields to Detected Headers:</h6>
+                                <p class="small text-muted">For each standard field your tool needs, select the matching column header from the client's uploaded file.</p>
+                                <table class="table table-bordered table-sm mapping-table">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Standard Field</th>
+                                            <th>Client's Column Header</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="mappingTableBody">
+                                        <!-- Mapping rows will be generated here -->
+                                    </tbody>
+                                </table>
+                            </div>
+                            
+                            <hr>
                             <button type="submit" class="btn btn-primary">Save Configuration</button>
                             <button type="button" class="btn btn-secondary" id="clearBtn">Clear Form</button>
                         </form>
                     </div>
                 </div>
             </div>
+
+            <!-- List of existing configurations -->
+            <div class="col-md-5">
+                <h2>Existing Configurations</h2>
+                <ul class="list-group" id="configList">
+                    <!-- Configurations will be loaded here -->
+                </ul>
+            </div>
         </div>
     </div>
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    const configList = document.getElementById('configList');
+    // --- FORM ELEMENTS ---
     const configForm = document.getElementById('configForm');
     const formTitle = document.getElementById('formTitle');
     const configIdInput = document.getElementById('configId');
@@ -60,16 +98,98 @@ document.addEventListener('DOMContentLoaded', () => {
     const clientNameInput = document.getElementById('clientName');
     const agingCalcInput = document.getElementById('agingCalc');
     const clearBtn = document.getElementById('clearBtn');
-    
-    // API endpoint for our function
-    const API_ENDPOINT = '/.netlify/functions/configurations';
+    const reportUploader = document.getElementById('reportUploader');
+    const mappingSection = document.getElementById('mappingSection');
+    const detectedHeadersDiv = document.getElementById('detectedHeaders');
+    const mappingTableBody = document.getElementById('mappingTableBody');
+    const configList = document.getElementById('configList');
 
-    // Load and display all configurations
+    // --- STATE VARIABLES ---
+    let detectedHeaders = [];
+    const API_ENDPOINT = '/.netlify/functions/configurations';
+    
+    // These are the REQUIRED fields your tool needs to function. 
+    // The keys (e.g., 'claimId') are what you will use internally in your index.html.
+    const standardFields = [
+        { key: 'claimId',        displayName: 'Claim ID / Number',    required: true },
+        { key: 'age',            displayName: 'Age (in days)',        required: true },
+        { key: 'cleanAge',       displayName: 'Clean Age',            required: false },
+        { key: 'netPayment',     displayName: 'Net Payment Amount',   required: true },
+        { key: 'totalCharges',   displayName: 'Total Billed Amount',  required: false },
+        { key: 'state',          displayName: 'Claim State',          required: true },
+        { key: 'status',         displayName: 'Claim Status',         required: true },
+        { key: 'networkStatus',  displayName: 'Network Status',       required: true },
+        { key: 'providerName',   displayName: 'Billing Provider Name',required: true },
+        { key: 'dsnp',           displayName: 'DSNP Status',          required: false },
+        { key: 'edit',           displayName: 'Claim Edits',          required: false },
+        { key: 'notes',          displayName: 'Claim Notes',          required: false },
+    ];
+
+    // --- FILE UPLOAD LOGIC ---
+    reportUploader.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const sheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[sheetName];
+            
+            // Use 'header: 1' to get an array of arrays, where the first array is the headers.
+            const json = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+            detectedHeaders = json[0] || []; // Get the first row
+            
+            renderMappingUI();
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    function renderMappingUI() {
+        // Show detected headers as badges
+        detectedHeadersDiv.innerHTML = detectedHeaders.map(h => `<span class="badge bg-secondary me-1">${h}</span>`).join('');
+        
+        // Build the mapping table
+        mappingTableBody.innerHTML = '';
+        standardFields.forEach(field => {
+            const row = document.createElement('tr');
+            
+            // Column 1: Standard Field Name
+            const cell1 = document.createElement('td');
+            cell1.textContent = field.displayName;
+            if (field.required) {
+                cell1.innerHTML += ' <span class="text-danger">*</span>';
+            }
+            
+            // Column 2: Dropdown with detected headers
+            const cell2 = document.createElement('td');
+            const select = document.createElement('select');
+            select.className = 'form-select form-select-sm';
+            select.dataset.standardKey = field.key; // Store our internal key
+            
+            const defaultOption = new Option(field.required ? 'Select a header...' : 'Optional', '');
+            select.add(defaultOption);
+
+            detectedHeaders.forEach(header => {
+                select.add(new Option(header, header));
+            });
+            
+            cell2.appendChild(select);
+            row.appendChild(cell1);
+            row.appendChild(cell2);
+            mappingTableBody.appendChild(row);
+        });
+
+        mappingSection.style.display = 'block';
+    }
+
+    // --- CRUD OPERATIONS ---
     async function loadConfigurations() {
         try {
             const response = await fetch(API_ENDPOINT);
             const configs = await response.json();
-            configList.innerHTML = ''; // Clear list
+            configList.innerHTML = '';
             if (configs.length === 0) {
                 configList.innerHTML = '<li class="list-group-item">No configurations found.</li>';
                 return;
@@ -78,16 +198,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
                 li.textContent = config.config_name;
-                
-                const buttonsDiv = document.createElement('div');
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'btn btn-danger btn-sm';
                 deleteBtn.textContent = 'Delete';
                 deleteBtn.onclick = () => deleteConfig(config.id);
-                
-                buttonsDiv.appendChild(deleteBtn);
-                li.appendChild(buttonsDiv);
-                
+                li.appendChild(deleteBtn);
                 configList.appendChild(li);
             });
         } catch (error) {
@@ -96,14 +211,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Handle form submission for creating or updating
     configForm.addEventListener('submit', async (e) => {
         e.preventDefault();
+        
+        // 1. Build the columnMappings object from the UI table
+        const columnMappings = {};
+        const mappingSelects = mappingTableBody.querySelectorAll('select');
+        mappingSelects.forEach(select => {
+            if (select.value) { // Only save if a value is selected
+                columnMappings[select.dataset.standardKey] = select.value;
+            }
+        });
+
+        // 2. Gather all config data
         const id = configIdInput.value;
         const config_name = configNameInput.value;
         const config_data = {
             clientName: clientNameInput.value,
-            agingCalc: agingCalcInput.value
+            agingCalc: agingCalcInput.value,
+            columnMappings: columnMappings // Add our new mappings
         };
 
         const method = id ? 'PUT' : 'POST';
@@ -126,7 +252,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Delete a configuration
     async function deleteConfig(id) {
         if (!confirm('Are you sure you want to delete this configuration?')) return;
         try {
@@ -140,16 +265,16 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
     
-    // Clear the form to its default state
     function clearForm() {
         configForm.reset();
         configIdInput.value = '';
         formTitle.textContent = 'Add New Configuration';
+        mappingSection.style.display = 'none';
+        detectedHeaders = [];
     }
     
     clearBtn.addEventListener('click', clearForm);
 
-    // Initial load
     loadConfigurations();
 });
 </script>
