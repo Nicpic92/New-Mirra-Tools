@@ -241,8 +241,7 @@
         // --- MAIN FILE HANDLING AND PROCESSING LOGIC ---
         function handleFile(event, isReprocessing = false) {
             if (!isReprocessing && !event.target.files[0]) return;
-
-            // --- FIX: Check if a configuration is selected from the dropdown directly ---
+            
             if (!document.getElementById('configSelector').value) {
                 alert("Please select a report configuration first.");
                 if (event) event.target.value = "";
@@ -365,7 +364,13 @@
             metrics.topProvidersOnHold = getTop10(metrics.providerCounts.onhold);
             metrics.topProvidersMgmtReview = getTop10(metrics.providerCounts.mgmtreview);
             
-            const processSimpleTable = (counts) => ({ labels: Object.keys(counts).sort(), data: Object.values(counts).sort((a,b) => b-a) });
+            const processSimpleTable = (counts) => {
+                const sorted = Object.entries(counts).sort(([,a],[,b]) => b - a);
+                return {
+                    labels: sorted.map(item => item[0]),
+                    data: sorted.map(item => item[1])
+                };
+            };
             metrics.claimsByFinalStatus = processSimpleTable(metrics.claimsByStatus);
             metrics.claimsByWorkflowState = processSimpleTable(metrics.claimsByState);
 
@@ -592,7 +597,7 @@
         }
         
         async function generateStructuredPDF() {
-            if (!aggregatedMetrics.totalClaims) { alert("Please load data first."); return; }
+            if (Object.keys(aggregatedMetrics).length === 0) { alert("Please load data first."); return; }
             const clientName = document.getElementById('clientName').value.trim();
             const selectedConfigId = parseInt(document.getElementById('configSelector').value, 10);
             const config = allConfigs.find(c => c.id === selectedConfigId);
@@ -616,12 +621,12 @@
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'pt', 'a4');
             const margin = 40;
-            const pageHeight = pdf.internal.pageSize.getHeight();
+            const pageContentWidth = pdf.internal.pageSize.getWidth() - (margin * 2);
             let currentY = margin;
 
             // --- PDF HELPER FUNCTIONS ---
             const checkPageBreak = (spaceNeeded) => {
-                if (currentY + spaceNeeded > pageHeight - margin) {
+                if (currentY + spaceNeeded > pdf.internal.pageSize.getHeight() - margin) {
                     pdf.addPage();
                     currentY = margin;
                 }
@@ -639,6 +644,52 @@
                 pdf.text(title, margin, currentY);
                 currentY += 25;
             };
+
+            // --- NEW: High-performance function to draw summary cards natively ---
+            const drawSummaryCards = (pdf, metrics, x, y, width) => {
+                const fNum = (num) => num.toLocaleString('en-US');
+                const fCur = (num) => num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                const cards = [
+                    { label: 'TOTAL CLAIMS', value: fNum(metrics.totalClaims), color: '#0d6efd'},
+                    { label: 'TOTAL NET PAYMENT (PENDING)', value: fCur(metrics.totalNetPayment), color: '#198754'},
+                    { label: 'CLAIMS PEND STATUS', value: fNum(metrics.claimsPend), color: '#ffc107'},
+                    { label: 'CLAIMS DENIED', value: fNum(metrics.claimsDenied), color: '#dc3545'}
+                ];
+                
+                const cardsPerRow = 2;
+                const cardHeight = 60;
+                const gap = 20;
+                const cardWidth = (width - gap) / cardsPerRow;
+                let currentX = x;
+
+                cards.forEach((card, index) => {
+                    if (index > 0 && index % cardsPerRow === 0) {
+                        y += cardHeight + gap;
+                        currentX = x;
+                    }
+                    
+                    pdf.setDrawColor('#dee2e6');
+                    pdf.setLineWidth(1);
+                    pdf.rect(currentX, y, cardWidth, cardHeight);
+                    
+                    pdf.setFillColor(card.color);
+                    pdf.rect(currentX, y, 4, cardHeight, 'F');
+                    
+                    const textX = currentX + 15;
+                    pdf.setFont('helvetica', 'bold');
+                    pdf.setFontSize(8);
+                    pdf.setTextColor('#6c757d');
+                    pdf.text(card.label, textX, y + 20);
+                    
+                    pdf.setFontSize(22);
+                    pdf.setTextColor('#212529');
+                    pdf.text(card.value, textX, y + 45);
+                    
+                    currentX += cardWidth + gap;
+                });
+                return y + cardHeight + 20;
+            };
+
             const prepareTableData = (dataSourceId) => {
                 const sourceData = aggregatedMetrics[dataSourceId];
                 if (!sourceData || !sourceData.labels || !sourceData.data) return [];
@@ -648,12 +699,9 @@
                 }));
             };
 
-            // --- RENDER PDF HEADER ---
+            // --- RENDER PDF HEADER (Optimized) ---
             const logoImg = document.getElementById('logoImage');
-            try {
-                const logoCanvas = await html2canvas(logoImg, { backgroundColor: null });
-                pdf.addImage(logoCanvas.toDataURL('image/png'), 'PNG', margin, currentY, 84, 24);
-            } catch (e) { console.error("Error rendering logo for PDF:", e); }
+            pdf.addImage(logoImg.src, 'PNG', margin, currentY, 84, 24);
             currentY += 40;
             addMainTitle(pdfTitle);
 
@@ -663,18 +711,14 @@
                 
                 switch (section.type) {
                     case 'summary': {
-                        const canvas = await html2canvas(document.getElementById('executive-summary-cards'));
-                        const imgWidth = pdf.internal.pageSize.getWidth() - margin * 2;
-                        const imgHeight = canvas.height * imgWidth / canvas.width;
-                        checkPageBreak(imgHeight + 20);
-                        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, currentY, imgWidth, imgHeight);
-                        currentY += imgHeight + 20;
+                        // --- FIX: Use the new high-performance drawing function ---
+                        currentY = drawSummaryCards(pdf, aggregatedMetrics, margin, currentY, pageContentWidth);
                         break;
                     }
                     case 'table':
                     case 'custom_table': {
                         const tableData = prepareTableData(section.id);
-                        const allWidgets = [...config.config_data.pdfConfig.customWidgets, { id: 'claimsByFinalStatus', columns: [{ header: 'Status', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, { id: 'claimsByWorkflowState', columns: [{ header: 'State', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, { id: 'topEdits', columns: [{ header: 'Edit', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, { id: 'topProvidersOverall', columns: [{ header: 'Provider', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]} ];
+                        const allWidgets = [...pdfConfig.customWidgets, ...config.config_data.pdfConfig.customWidgets || []];
                         const widgetDefinition = allWidgets.find(w => w.id === section.id);
                         
                         if (widgetDefinition && tableData.length > 0) {
@@ -682,8 +726,11 @@
                             const head = [columns.map(c => c.header)];
                             const body = tableData.map(row => columns.map(col => {
                                 let val = row[col.dataKey];
-                                if (typeof val === 'number' && widgetDefinition.metricType === 'sum') {
-                                    return val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                                if (typeof val === 'number') {
+                                    if (widgetDefinition.metricType === 'sum') {
+                                        return val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                                    }
+                                    return val.toLocaleString();
                                 }
                                 return val;
                             }));
@@ -714,8 +761,8 @@
 
                             pdf.autoTable({
                                 startY: currentY,
-                                head: head,
-                                body: body,
+                                head,
+                                body,
                                 theme: 'striped',
                                 headStyles: { fillColor: [70, 90, 108] },
                                 didParseCell: (data) => {
