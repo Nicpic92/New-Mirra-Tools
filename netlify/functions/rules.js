@@ -1,14 +1,17 @@
-// This function handles saving the rules that map edits to categories.
 const { Pool } = require('pg');
 
 const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
 
 exports.handler = async function(event) {
     const db = getDb();
-    
-    // Simplified: This function now only handles edit rules.
-    const tableName = 'claim_edit_rules';
-    const textField = 'edit_text';
+    const { type } = event.queryStringParameters; // Expects 'edit' or 'note'
+
+    if (!['edit', 'note'].includes(type)) {
+        return { statusCode: 400, body: 'Invalid rule type specified.' };
+    }
+
+    const tableName = type === 'edit' ? 'claim_edit_rules' : 'claim_note_rules';
+    const textField = type === 'edit' ? 'edit_text' : 'note_keyword';
 
     try {
         switch (event.httpMethod) {
@@ -22,7 +25,6 @@ exports.handler = async function(event) {
                 if (!Array.isArray(rules) || rules.length === 0) {
                     return { statusCode: 400, body: 'Request body must be a non-empty array.' };
                 }
-
                 const client = await db.connect();
                 try {
                     await client.query('BEGIN');
