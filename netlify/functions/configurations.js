@@ -11,8 +11,9 @@ exports.handler = async function(event) {
     try {
         switch (event.httpMethod) {
             case 'GET': {
-                // Get all configurations
-                const result = await db.query('SELECT id, config_name FROM column_configurations ORDER BY config_name;');
+                // THIS IS THE CORRECTED LINE:
+                // We now select 'config_data' so the main page has access to the column mappings.
+                const result = await db.query('SELECT id, config_name, config_data FROM column_configurations ORDER BY config_name;');
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
