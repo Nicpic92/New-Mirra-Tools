@@ -2,4 +2,4 @@
 
 # Protect the /admin.html page with a password
 /admin.html
-  Basic-Auth: admin:Nicpic92!!
+  Basic-Auth: admin:${fixit456}
