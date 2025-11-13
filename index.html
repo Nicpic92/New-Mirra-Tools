@@ -644,8 +644,6 @@
                 pdf.text(title, margin, currentY);
                 currentY += 25;
             };
-
-            // --- NEW: High-performance function to draw summary cards natively ---
             const drawSummaryCards = (pdf, metrics, x, y, width) => {
                 const fNum = (num) => num.toLocaleString('en-US');
                 const fCur = (num) => num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -689,7 +687,6 @@
                 });
                 return y + cardHeight + 20;
             };
-
             const prepareTableData = (dataSourceId) => {
                 const sourceData = aggregatedMetrics[dataSourceId];
                 if (!sourceData || !sourceData.labels || !sourceData.data) return [];
@@ -699,9 +696,10 @@
                 }));
             };
 
-            // --- RENDER PDF HEADER (Optimized) ---
+            // --- RENDER PDF HEADER ---
             const logoImg = document.getElementById('logoImage');
-            pdf.addImage(logoImg.src, 'PNG', margin, currentY, 84, 24);
+            // --- FIX: Pass the image ELEMENT, not the .src string ---
+            pdf.addImage(logoImg, 'PNG', margin, currentY, 84, 24);
             currentY += 40;
             addMainTitle(pdfTitle);
 
@@ -711,14 +709,19 @@
                 
                 switch (section.type) {
                     case 'summary': {
-                        // --- FIX: Use the new high-performance drawing function ---
                         currentY = drawSummaryCards(pdf, aggregatedMetrics, margin, currentY, pageContentWidth);
                         break;
                     }
                     case 'table':
                     case 'custom_table': {
                         const tableData = prepareTableData(section.id);
-                        const allWidgets = [...pdfConfig.customWidgets, ...config.config_data.pdfConfig.customWidgets || []];
+                        const allWidgets = [
+                            ...pdfConfig.customWidgets, 
+                            { id: 'claimsByFinalStatus', columns: [{ header: 'Status', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, 
+                            { id: 'claimsByWorkflowState', columns: [{ header: 'State', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, 
+                            { id: 'topEdits', columns: [{ header: 'Edit', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, 
+                            { id: 'topProvidersOverall', columns: [{ header: 'Provider', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]} 
+                        ];
                         const widgetDefinition = allWidgets.find(w => w.id === section.id);
                         
                         if (widgetDefinition && tableData.length > 0) {
@@ -761,8 +764,8 @@
 
                             pdf.autoTable({
                                 startY: currentY,
-                                head,
-                                body,
+                                head: head,
+                                body: body,
                                 theme: 'striped',
                                 headStyles: { fillColor: [70, 90, 108] },
                                 didParseCell: (data) => {
@@ -788,4 +791,4 @@
 
     </script>
 </body>
-</html>
+</html>```
