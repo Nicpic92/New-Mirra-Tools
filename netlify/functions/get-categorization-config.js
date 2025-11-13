@@ -3,16 +3,28 @@ const { Pool } = require('pg');
 exports.handler = async function(event, context) {
     const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
+        // Query now joins through categories to get team info for each rule
         const editRulesQuery = `
-            SELECT r.edit_text, c.category_name
+            SELECT r.edit_text, c.category_name, t.id as team_id, t.team_name
             FROM claim_edit_rules r
-            JOIN claim_categories c ON r.category_id = c.id;
+            JOIN claim_categories c ON r.category_id = c.id
+            JOIN teams t ON c.team_id = t.id;
         `;
-        
-        const editRulesResult = await pool.query(editRulesQuery);
+        const noteRulesQuery = `
+            SELECT r.note_keyword, c.category_name, t.id as team_id, t.team_name
+            FROM claim_note_rules r
+            JOIN claim_categories c ON r.category_id = c.id
+            JOIN teams t ON c.team_id = t.id;
+        `;
+
+        const [editRulesResult, noteRulesResult] = await Promise.all([
+            pool.query(editRulesQuery),
+            pool.query(noteRulesQuery)
+        ]);
 
         const config = {
             editRules: editRulesResult.rows,
+            noteRules: noteRulesResult.rows,
         };
 
         return {
