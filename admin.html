@@ -246,8 +246,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const standardFields = [
         { key: 'claimId', displayName: 'Claim ID / Number', required: true, type: 'string' }, { key: 'age', displayName: 'Age (in days)', required: true, type: 'number' }, { key: 'netPayment', displayName: 'Net Payment Amount', required: true, type: 'number' }, { key: 'state', displayName: 'Claim State', required: true, type: 'string' }, { key: 'status', displayName: 'Claim Status', required: true, type: 'string' }, { key: 'networkStatus', displayName: 'Network Status', required: true, type: 'string' }, { key: 'providerName', displayName: 'Billing Provider Name', required: true, type: 'string' }, { key: 'edit', displayName: 'Claim Edits', required: true, type: 'string' }, { key: 'notes', displayName: 'Claim Notes', required: true, type: 'string' }, { key: 'totalCharges', displayName: 'Total Billed Amount', required: false, type: 'number' }, { key: 'dsnp', displayName: 'DSNP Status', required: false, type: 'string' }, { key: 'payer', displayName: 'Payer Name', required: false, type: 'string' }, { key: 'claimCategory', displayName: 'Category', required: false, type: 'string' }, { key: 'claimType', displayName: 'Claim Type', required: false, type: 'string' }, { key: 'receivedDate', displayName: 'Received Date', required: false, type: 'date' }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID', required: false, type: 'string' }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI', required: false, type: 'string' }, { key: 'patientName', displayName: 'Patient Name', required: false, type: 'string' }, { key: 'subscriberId', displayName: 'Subscriber ID', required: false, type: 'string' }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name', required: false, type: 'string' }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI', required: false, type: 'string' }, { key: 'dosFrom', displayName: 'Date of Service (From)', required: false, type: 'date' }, { key: 'dosTo', displayName: 'Date of Service (To)', required: false, type: 'date' }, { key: 'cleanAge', displayName: 'Clean Age', required: false, type: 'number' }, { key: 'pbpName', displayName: 'PBP Name', required: false, type: 'string' }, { key: 'planName', displayName: 'Plan Name', required: false, type: 'string' }, { key: 'activityLog', displayName: 'Activity Log Description', required: false, type: 'string' }, { key: 'activityUser', displayName: 'Activity Performed By', required: false, type: 'string' }, { key: 'activityDate', displayName: 'Activity Performed On', required: false, type: 'date' }
     ];
+    
+    // --- NEW: Expanded list of available standard widgets ---
     const availablePdfWidgets = [
-        { id: 'summary', name: 'Executive Summary Cards', type: 'summary' }, { id: 'topEdits', name: 'Top 10 Edits Table', type: 'table', dataSource: 'topEdits', columns: [{ header: 'Edit Rule', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] }, { id: 'topProvidersOverall', name: 'Top 10 Providers (All)', type: 'table', dataSource: 'topProvidersOverall', columns: [{ header: 'Provider Name', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] }, { id: 'topProvidersOnHold', name: 'Top 10 Providers (On Hold)', type: 'table', dataSource: 'topProvidersOnHold', columns: [{ header: 'Provider Name', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] }, { id: 'topProvidersMgmtReview', name: 'Top 10 Providers (Mgmt Review)', type: 'table', dataSource: 'topProvidersMgmtReview', columns: [{ header: 'Provider Name', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] }
+        { id: 'summary', name: 'Executive Summary Cards', type: 'summary' },
+        { id: 'claimsByFinalStatus', name: 'Claims by Final Status', type: 'table', dataSource: 'claimsByFinalStatus', columns: [{ header: 'Status', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] },
+        { id: 'claimsByWorkflowState', name: 'Claims by Workflow State', type: 'table', dataSource: 'claimsByWorkflowState', columns: [{ header: 'State', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] },
+        { id: 'topEdits', name: 'Top 10 Claim Edits', type: 'table', dataSource: 'topEdits', columns: [{ header: 'Edit Rule', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] },
+        { id: 'topProvidersOverall', name: 'Top 10 Providers (Overall)', type: 'table', dataSource: 'topProvidersOverall', columns: [{ header: 'Provider Name', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] },
+        { id: 'agingCombined', name: 'Aging Analysis (Combined)', type: 'aging_table' },
+        { id: 'agingActive', name: 'Aging Analysis (Active)', type: 'aging_table' },
+        { id: 'agingPrebatch', name: 'Aging Analysis (Prebatch)', type: 'aging_table' }
     ];
     
     // --- CORE DATA LOADING ---
@@ -313,7 +322,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 loadRules(),
                 loadConfigurations()
             ]);
-            // Now that all data is loaded, render the dependent UI components.
             renderTeamList();
             populateTeamDropdown();
             renderCategoryList();
@@ -329,7 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const config = (window.allClientConfigs || []).find(c => c.id === configId);
         if (!config) return;
         
-        clearConfigForm(); // Clear the form first to remove any previous state
+        clearConfigForm();
         
         configIdInput.value = config.id;
         configNameInput.value = config.config_name;
@@ -386,7 +394,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await fetch(`${CONFIG_API}?id=${id}`, { method: 'DELETE' });
             alert('Configuration deleted successfully.');
-            loadConfigurations(); // Reload the list
+            loadConfigurations();
         } catch (error) { alert('Failed to delete configuration.'); }
     }
 
