@@ -1,7 +1,5 @@
-// This function handles CRUD operations for categorization rules.
 const { Pool } = require('pg');
 
-// Helper function to connect to the database
 const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
 
 exports.handler = async function(event) {
@@ -11,21 +9,28 @@ exports.handler = async function(event) {
     try {
         switch (event.httpMethod) {
             case 'GET': {
-                const result = await db.query('SELECT * FROM claim_categories ORDER BY category_name;');
+                // Join with teams table to get the team name associated with each category
+                const sql = `
+                    SELECT c.id, c.category_name, c.team_id, t.team_name
+                    FROM claim_categories c
+                    LEFT JOIN teams t ON c.team_id = t.id
+                    ORDER BY t.team_name, c.category_name;
+                `;
+                const result = await db.query(sql);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
-                const { category_name } = JSON.parse(event.body);
-                if (!category_name) {
-                    return { statusCode: 400, body: 'Missing category_name' };
+                // Now requires both category_name and the team_id it belongs to
+                const { category_name, team_id } = JSON.parse(event.body);
+                if (!category_name || !team_id) {
+                    return { statusCode: 400, body: 'Missing category_name or team_id' };
                 }
-                const sql = 'INSERT INTO claim_categories (category_name) VALUES ($1) RETURNING *;';
-                const result = await db.query(sql, [category_name]);
+                const sql = 'INSERT INTO claim_categories (category_name, team_id) VALUES ($1, $2) RETURNING *;';
+                const result = await db.query(sql, [category_name, team_id]);
                 return { statusCode: 201, body: JSON.stringify(result.rows[0]) };
             }
             case 'DELETE': {
                 if (!id) return { statusCode: 400, body: 'Missing category ID' };
-                // The ON DELETE CASCADE in the database schema handles deleting associated rules.
                 await db.query('DELETE FROM claim_categories WHERE id = $1;', [id]);
                 return { statusCode: 200, body: JSON.stringify({ message: 'Category deleted' }) };
             }
