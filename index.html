@@ -242,7 +242,8 @@
         function handleFile(event, isReprocessing = false) {
             if (!isReprocessing && !event.target.files[0]) return;
 
-            if (Object.keys(currentColumnMappings).length === 0) {
+            // --- FIX: Check if a configuration is selected from the dropdown directly ---
+            if (!document.getElementById('configSelector').value) {
                 alert("Please select a report configuration first.");
                 if (event) event.target.value = "";
                 return;
@@ -284,7 +285,6 @@
         function analyzeAndProcessClaims(data) {
             const metrics = { totalClaims: 0, totalNetPayment: 0, claimsPend: 0, claimsDenied: 0, claimsByStatus: {}, claimsByState: {}, claimsByNetwork: {}, claimsByEdit: {}, providerCounts: { overall: {}, onhold: {}, mgmtreview: {} }};
             
-            // --- NEW: Aging Analysis Setup ---
             const createAgingTable = () => ({
                 '0-20': { par: 0, nonpar: 0 },
                 '21-27': { par: 0, nonpar: 0 },
@@ -319,7 +319,6 @@
                     original: rawClaim
                 };
 
-                // --- Standard Metric Aggregation ---
                 metrics.totalClaims++;
                 if (!isNaN(processedClaim.netPayment)) metrics.totalNetPayment += processedClaim.netPayment;
                 if (processedClaim.status === 'PEND') metrics.claimsPend++;
@@ -332,7 +331,6 @@
                 if (processedClaim.state === 'ONHOLD') metrics.providerCounts.onhold[processedClaim.providerName] = (metrics.providerCounts.onhold[processedClaim.providerName] || 0) + 1;
                 if (processedClaim.state === 'MANAGEMENTREVIEW') metrics.providerCounts.mgmtreview[processedClaim.providerName] = (metrics.providerCounts.mgmtreview[processedClaim.providerName] || 0) + 1;
                 
-                // --- NEW: Aging Analysis Data Collection ---
                 const ageBin = getAgeBin(processedClaim.age);
                 const networkKey = (processedClaim.networkStatus.toUpperCase().includes('NON') || processedClaim.networkStatus.toUpperCase().includes('OUT')) ? 'nonpar' : 'par';
                 
@@ -361,19 +359,16 @@
                 return processedClaim;
             });
             
-            // --- Standard Top 10 Calculations ---
             const getTop10 = (counts, filterKey = null) => Object.entries(counts).filter(([k]) => k !== filterKey).sort(([, a], [, b]) => b - a).slice(0, 10).reduce((acc, [l, d]) => (acc.labels.push(l), acc.data.push(d), acc), { labels: [], data: [] });
             metrics.topEdits = getTop10(metrics.claimsByEdit, 'No Edits');
             metrics.topProvidersOverall = getTop10(metrics.providerCounts.overall);
             metrics.topProvidersOnHold = getTop10(metrics.providerCounts.onhold);
             metrics.topProvidersMgmtReview = getTop10(metrics.providerCounts.mgmtreview);
             
-            // --- NEW: Finalize Standard Tables (Status/State) ---
-            const processSimpleTable = (counts) => ({ labels: Object.keys(counts).sort(), data: Object.values(counts) });
+            const processSimpleTable = (counts) => ({ labels: Object.keys(counts).sort(), data: Object.values(counts).sort((a,b) => b-a) });
             metrics.claimsByFinalStatus = processSimpleTable(metrics.claimsByStatus);
             metrics.claimsByWorkflowState = processSimpleTable(metrics.claimsByState);
 
-            // --- NEW: Finalize Aging Tables ---
             const finalizeAgingTable = (tableData) => {
                 const final = { bins: {}, totals: { par: 0, nonpar: 0, grand: 0 }};
                 for (const bin in tableData) {
@@ -397,8 +392,6 @@
             metrics.agingActive = finalizeAgingTable(agingData.active);
             metrics.agingPrebatch = finalizeAgingTable(agingData.prebatch);
 
-
-            // --- DYNAMICALLY PROCESS CUSTOM WIDGETS ---
             const selectedConfigId = parseInt(document.getElementById('configSelector').value, 10);
             const config = allConfigs.find(c => c.id === selectedConfigId);
             const customWidgets = config?.config_data?.pdfConfig?.customWidgets || [];
@@ -681,7 +674,7 @@
                     case 'table':
                     case 'custom_table': {
                         const tableData = prepareTableData(section.id);
-                        const allWidgets = [...availablePdfWidgets, ...(config.config_data.pdfConfig.customWidgets || [])];
+                        const allWidgets = [...config.config_data.pdfConfig.customWidgets, { id: 'claimsByFinalStatus', columns: [{ header: 'Status', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, { id: 'claimsByWorkflowState', columns: [{ header: 'State', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, { id: 'topEdits', columns: [{ header: 'Edit', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]}, { id: 'topProvidersOverall', columns: [{ header: 'Provider', dataKey: 'label'}, {header: 'Count', dataKey: 'data'}]} ];
                         const widgetDefinition = allWidgets.find(w => w.id === section.id);
                         
                         if (widgetDefinition && tableData.length > 0) {
