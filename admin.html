@@ -76,6 +76,7 @@
 
                                 <h5>2. Manage Categories</h5>
                                 <div class="mb-3">
+                                    <label for="teamCategorySelect" class="form-label">Select Team</label>
                                     <select class="form-select" id="teamCategorySelect"><option>Select a team to add category to...</option></select>
                                 </div>
                                 <form id="newCategoryForm" class="d-flex">
@@ -106,7 +107,7 @@
                                         <tbody id="uncategorizedEditsTable"></tbody>
                                     </table>
                                     
-                                    <h6 class="mt-4">Uncategorized Note Keywords</h6>
+                                    <h6 class="mt-4">Uncategorized Note Keywords (Alphabetical)</h6>
                                     <table class="table table-sm table-bordered">
                                        <thead class="table-light"><tr><th>Note Keyword</th><th>Assign to Category</th></tr></thead>
                                        <tbody id="uncategorizedNotesTable"></tbody>
@@ -125,7 +126,14 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // --- START: CLIENT CONFIGURATION SCRIPT (Unchanged) ---
+    // --- API ENDPOINTS ---
+    const CONFIG_API = '/.netlify/functions/configurations';
+    const TEAMS_API = '/.netlify/functions/teams';
+    const CATEGORIES_API = '/.netlify/functions/categories';
+    const RULES_API = '/.netlify/functions/rules';
+
+    // --- DOM ELEMENTS ---
+    // Client Configs
     const configForm = document.getElementById('configForm');
     const configIdInput = document.getElementById('configId');
     const configNameInput = document.getElementById('configName');
@@ -135,8 +143,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const mappingSection = document.getElementById('mappingSection');
     const mappingTableBody = document.getElementById('mappingTableBody');
     const configList = document.getElementById('configList');
+
+    // Teams & Categories
+    const teamList = document.getElementById('teamList');
+    const newTeamForm = document.getElementById('newTeamForm');
+    const newTeamNameInput = document.getElementById('newTeamName');
+    const teamCategorySelect = document.getElementById('teamCategorySelect');
+    const categoryListContainer = document.getElementById('categoryListContainer');
+    const newCategoryForm = document.getElementById('newCategoryForm');
+    const newCategoryNameInput = document.getElementById('newCategoryName');
+    
+    // Rule Management
+    const categorizationConfigSelector = document.getElementById('categorizationConfigSelector');
+    const categorizationReportUploader = document.getElementById('categorizationReportUploader');
+    const rulesAssignmentContainer = document.getElementById('rulesAssignmentContainer');
+    const uncategorizedEditsTable = document.getElementById('uncategorizedEditsTable');
+    const uncategorizedNotesTable = document.getElementById('uncategorizedNotesTable');
+    const noRulesFoundDiv = document.getElementById('noRulesFound');
+    const saveCategorizationRulesBtn = document.getElementById('saveCategorizationRulesBtn');
+
+    // --- GLOBAL STATE ---
     let detectedHeaders = [];
-    const CONFIG_API = '/.netlify/functions/configurations';
+    let allTeams = [];
+    let allCategories = [];
+    let existingEditRules = new Map();
+    let existingNoteRules = new Map();
+    let columnMappingsForCategorization = {};
     const standardFields = [
         { key: 'claimId', displayName: 'Claim ID / Number', required: true },
         { key: 'age', displayName: 'Age (in days)', required: true },
@@ -150,48 +182,39 @@ document.addEventListener('DOMContentLoaded', () => {
         { key: 'dsnp', displayName: 'DSNP Status', required: false },
         { key: 'totalCharges', displayName: 'Total Billed Amount', required: false },
     ];
-    // This entire block of code for client config management remains the same as before...
-    clearBtn.addEventListener('click', () => configForm.reset());
-    // --- END: CLIENT CONFIGURATION SCRIPT ---
+    
+    // --- CORE DATA LOADING FUNCTIONS ---
 
+    // THIS FUNCTION IS NOW IN THE MAIN SCOPE
+    async function loadConfigurations() {
+        try {
+            const response = await fetch(CONFIG_API);
+            const configs = await response.json();
+            
+            // This global variable is used by the categorization section
+            window.allClientConfigs = configs; 
 
-    // --- START: TEAM & CATEGORIZATION SCRIPT (All New/Updated Logic) ---
-    const TEAMS_API = '/.netlify/functions/teams';
-    const CATEGORIES_API = '/.netlify/functions/categories';
-    const RULES_API = '/.netlify/functions/rules';
+            configList.innerHTML = configs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
+            categorizationConfigSelector.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
 
-    // Global state
-    let allTeams = [];
-    let allCategories = [];
-    let existingEditRules = new Map();
-    let existingNoteRules = new Map();
-    let columnMappingsForCategorization = {};
+            configs.forEach(config => {
+                const li = document.createElement('li');
+                li.className = 'list-group-item d-flex justify-content-between align-items-center';
+                li.textContent = config.config_name;
+                const deleteBtn = document.createElement('button');
+                deleteBtn.className = 'btn btn-danger btn-sm';
+                deleteBtn.textContent = 'Delete';
+                deleteBtn.onclick = () => deleteConfig(config.id);
+                li.appendChild(deleteBtn);
+                configList.appendChild(li);
 
-    // DOM Elements
-    const teamList = document.getElementById('teamList');
-    const newTeamForm = document.getElementById('newTeamForm');
-    const newTeamNameInput = document.getElementById('newTeamName');
-    const teamCategorySelect = document.getElementById('teamCategorySelect');
-    const categoryListContainer = document.getElementById('categoryListContainer');
-    const newCategoryForm = document.getElementById('newCategoryForm');
-    const newCategoryNameInput = document.getElementById('newCategoryName');
-    const categorizationConfigSelector = document.getElementById('categorizationConfigSelector');
-    const categorizationReportUploader = document.getElementById('categorizationReportUploader');
-    const rulesAssignmentContainer = document.getElementById('rulesAssignmentContainer');
-    const uncategorizedEditsTable = document.getElementById('uncategorizedEditsTable');
-    const uncategorizedNotesTable = document.getElementById('uncategorizedNotesTable');
-    const noRulesFoundDiv = document.getElementById('noRulesFound');
-    const saveCategorizationRulesBtn = document.getElementById('saveCategorizationRulesBtn');
-
-    async function loadAllData() {
-        await loadTeams();
-        await loadCategories();
-        await loadRules();
-        // The loadConfigurations function from the client section also needs to be called
-        await loadConfigurations(); 
+                categorizationConfigSelector.add(new Option(config.config_name, config.id));
+            });
+        } catch (error) {
+            console.error('Error loading configurations:', error);
+        }
     }
-
-    // --- Team Management ---
+    
     async function loadTeams() {
         try {
             const response = await fetch(TEAMS_API);
@@ -200,6 +223,93 @@ document.addEventListener('DOMContentLoaded', () => {
             populateTeamDropdown();
         } catch (error) { console.error("Failed to load teams:", error); }
     }
+    
+    async function loadCategories() {
+        try {
+            const response = await fetch(CATEGORIES_API);
+            allCategories = await response.json();
+            renderCategoryList();
+        } catch (error) { console.error("Failed to load categories:", error); }
+    }
+
+    async function loadRules() {
+        try {
+            const [editRes, noteRes] = await Promise.all([
+                fetch(`${RULES_API}?type=edit`),
+                fetch(`${RULES_API}?type=note`)
+            ]);
+            existingEditRules = new Map((await editRes.json()).map(rule => [rule.text, rule.category_id]));
+            existingNoteRules = new Map((await noteRes.json()).map(rule => [rule.text, rule.category_id]));
+        } catch (error) { console.error("Failed to load existing rules:", error); }
+    }
+
+    // This is the main orchestrator for loading all data on page start
+    async function loadAllData() {
+        await loadTeams();
+        await loadCategories();
+        await loadRules();
+        await loadConfigurations(); // Now correctly called
+    }
+
+    // --- CLIENT CONFIGURATION LOGIC ---
+    
+    function renderMappingUI() {
+        mappingTableBody.innerHTML = '';
+        standardFields.forEach(field => {
+            const row = mappingTableBody.insertRow();
+            row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`;
+            const cell2 = row.insertCell();
+            const select = document.createElement('select');
+            select.className = 'form-select form-select-sm';
+            select.dataset.standardKey = field.key;
+            select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
+            detectedHeaders.forEach(header => select.add(new Option(header, header)));
+            cell2.appendChild(select);
+        });
+        mappingSection.style.display = 'block';
+    }
+
+    configForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const columnMappings = {};
+        mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; });
+        const id = configIdInput.value;
+        const config_data = { clientName: clientNameInput.value, columnMappings };
+        const method = id ? 'PUT' : 'POST';
+        const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API;
+        try {
+            await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) });
+            alert(`Configuration ${id ? 'updated' : 'created'}!`);
+            configForm.reset();
+            loadConfigurations();
+        } catch (error) { alert('Failed to save configuration.'); }
+    });
+    
+    async function deleteConfig(id) {
+        if (!confirm('Are you sure?')) return;
+        try {
+            await fetch(`${CONFIG_API}?id=${id}`, { method: 'DELETE' });
+            alert('Configuration deleted.');
+            loadConfigurations();
+        } catch (error) { alert('Failed to delete configuration.'); }
+    }
+    
+    reportUploader.addEventListener('change', (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
+            detectedHeaders = json[0] || [];
+            renderMappingUI();
+        };
+        reader.readAsArrayBuffer(file);
+    });
+
+    clearBtn.addEventListener('click', () => configForm.reset());
+
+    // --- TEAM & CATEGORY LOGIC ---
 
     function renderTeamList() {
         teamList.innerHTML = allTeams.length ? '' : '<li class="list-group-item">No teams defined.</li>';
@@ -217,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateTeamDropdown() {
-        teamCategorySelect.innerHTML = '<option value="">Select a team...</option>';
+        teamCategorySelect.innerHTML = '<option value="">Select a team to add to...</option>';
         allTeams.forEach(team => teamCategorySelect.add(new Option(team.team_name, team.id)));
     }
     
@@ -236,21 +346,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!confirm('Are you sure? This will unassign categories from this team.')) return;
         try {
             await fetch(`${TEAMS_API}?id=${id}`, { method: 'DELETE' });
-            await loadAllData(); // Reload all data as categories will be affected
+            await loadAllData();
         } catch (error) { alert('Failed to delete team.'); }
-    }
-
-    // --- Category Management ---
-    async function loadCategories() {
-        try {
-            const response = await fetch(CATEGORIES_API);
-            allCategories = await response.json();
-            renderCategoryList();
-        } catch (error) { console.error("Failed to load categories:", error); }
     }
     
     function renderCategoryList() {
-        categoryListContainer.innerHTML = ''; // Clear previous content
+        categoryListContainer.innerHTML = '';
         const grouped = allCategories.reduce((acc, cat) => {
             const teamName = cat.team_name || 'Unassigned';
             if (!acc[teamName]) acc[teamName] = [];
@@ -258,13 +359,10 @@ document.addEventListener('DOMContentLoaded', () => {
             return acc;
         }, {});
 
-        for (const teamName in grouped) {
+        Object.keys(grouped).sort().forEach(teamName => {
             const card = document.createElement('div');
             card.className = 'card mb-2';
-            const header = document.createElement('div');
-            header.className = 'card-header py-1';
-            header.textContent = teamName;
-            card.appendChild(header);
+            card.innerHTML = `<div class="card-header py-1">${teamName}</div>`;
             const list = document.createElement('ul');
             list.className = 'list-group list-group-flush';
             grouped[teamName].forEach(cat => {
@@ -280,17 +378,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
             card.appendChild(list);
             categoryListContainer.appendChild(card);
-        }
+        });
     }
     
     newCategoryForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const category_name = newCategoryNameInput.value.trim();
         const team_id = teamCategorySelect.value;
-        if (!category_name || !team_id) {
-            alert('Please select a team and enter a category name.');
-            return;
-        }
+        if (!category_name || !team_id) return alert('Please select a team and enter a category name.');
         try {
             await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id }) });
             newCategoryNameInput.value = '';
@@ -299,33 +394,21 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     async function deleteCategory(id) {
-        if (!confirm('Are you sure? This will also delete all associated rules.')) return;
+        if (!confirm('Are you sure? This also deletes associated rules.')) return;
         try {
             await fetch(`${CATEGORIES_API}?id=${id}`, { method: 'DELETE' });
-            await loadAllData(); // Reload everything as rules will be affected
+            await loadAllData();
         } catch (error) { alert('Failed to delete category.'); }
     }
 
-    // --- Rule Management ---
-    async function loadRules() {
-        try {
-            const [editRes, noteRes] = await Promise.all([
-                fetch(`${RULES_API}?type=edit`),
-                fetch(`${RULES_API}?type=note`)
-            ]);
-            const edits = await editRes.json();
-            const notes = await noteRes.json();
-            existingEditRules = new Map(edits.map(rule => [rule.text, rule.category_id]));
-            existingNoteRules = new Map(notes.map(rule => [rule.text, rule.category_id]));
-        } catch (error) { console.error("Failed to load existing rules:", error); }
-    }
-    
+    // --- RULE MANAGEMENT LOGIC ---
     categorizationConfigSelector.addEventListener('change', () => {
         const selectedId = parseInt(categorizationConfigSelector.value, 10);
         const config = (window.allClientConfigs || []).find(c => c.id === selectedId);
         if (config?.config_data?.columnMappings) {
             columnMappingsForCategorization = config.config_data.columnMappings;
             categorizationReportUploader.disabled = !(columnMappingsForCategorization.edit && columnMappingsForCategorization.notes);
+            if(categorizationReportUploader.disabled) alert('Selected config must map both "Claim Edits" and "Claim Notes".')
         }
     });
 
@@ -344,19 +427,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function processUploadedReport(data) {
         const detectedEdits = new Set();
         const detectedNoteKeywords = new Set();
-        const editColumn = columnMappingsForCategorization.edit;
-        const notesColumn = columnMappingsForCategorization.notes;
+        const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization;
 
         data.forEach(row => {
             const editValue = row[editColumn];
-            if (editValue && !existingEditRules.has(editValue)) {
-                detectedEdits.add(editValue);
-            }
+            if (editValue && !existingEditRules.has(editValue)) detectedEdits.add(editValue);
+            
             const noteValue = (row[notesColumn] || '').toLowerCase();
             noteValue.split(/[^a-z0-9]+/).forEach(word => {
-                if (word.length > 3 && !existingNoteRules.has(word)) {
-                     detectedNoteKeywords.add(word);
-                }
+                if (word.length > 3 && !existingNoteRules.has(word)) detectedNoteKeywords.add(word);
             });
         });
 
@@ -379,7 +458,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0;
         rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none';
-        noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items found.';
+        noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items found in the uploaded file.';
         noRulesFoundDiv.style.display = hasRules ? 'none' : 'block';
     }
     
@@ -387,7 +466,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const select = document.createElement('select');
         select.className = 'form-select form-select-sm';
         select.add(new Option('Select category...', ''));
-        allCategories.forEach(cat => select.add(new Option(`${cat.team_name} -> ${cat.category_name}`, cat.id)));
+        allCategories.sort((a,b) => a.team_name.localeCompare(b.team_name)).forEach(cat => {
+            select.add(new Option(`${cat.team_name} -> ${cat.category_name}`, cat.id));
+        });
         return select;
     }
 
@@ -416,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { alert(`Failed to save rules: ${error.message}`); }
     });
 
-    // Initial Load
+    // --- INITIAL PAGE LOAD ---
     loadAllData();
 });
 </script>
