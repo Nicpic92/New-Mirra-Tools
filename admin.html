@@ -205,17 +205,32 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(CONFIG_API);
             const configs = await response.json();
-            window.allClientConfigs = configs; 
+            window.allClientConfigs = configs;
             configList.innerHTML = configs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
             categorizationConfigSelector.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
             configs.forEach(config => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                li.innerHTML = `<a href="#" class="config-name flex-grow-1" data-config-id="${config.id}">${config.config_name}</a>`;
+                const nameLink = document.createElement('a');
+                nameLink.href = '#';
+                nameLink.className = 'config-name flex-grow-1';
+                nameLink.dataset.configId = config.id;
+                nameLink.textContent = config.config_name;
+                li.appendChild(nameLink);
+                const btnGroup = document.createElement('div');
+                btnGroup.className = 'btn-group';
+                btnGroup.role = 'group';
+                const downloadBtn = document.createElement('button');
+                downloadBtn.className = 'btn btn-outline-secondary btn-sm';
+                downloadBtn.textContent = 'Download';
+                downloadBtn.onclick = () => downloadConfigAsXLSX(config);
+                btnGroup.appendChild(downloadBtn);
                 const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'btn btn-danger btn-sm'; deleteBtn.textContent = 'Delete';
+                deleteBtn.className = 'btn btn-danger btn-sm';
+                deleteBtn.textContent = 'Delete';
                 deleteBtn.onclick = () => deleteConfig(config.id);
-                li.appendChild(deleteBtn);
+                btnGroup.appendChild(deleteBtn);
+                li.appendChild(btnGroup);
                 configList.appendChild(li);
                 categorizationConfigSelector.add(new Option(config.config_name, config.id));
             });
@@ -313,6 +328,34 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Configuration deleted.');
             loadConfigurations();
         } catch (error) { alert('Failed to delete configuration.'); }
+    }
+
+    function downloadConfigAsXLSX(config) {
+        const wb = XLSX.utils.book_new();
+
+        // Create Summary Sheet
+        const summaryData = [
+            { Key: 'Configuration Name', Value: config.config_name },
+            { Key: 'Client Name (for PDF)', Value: config.config_data.clientName || 'Not Set' }
+        ];
+        const wsSummary = XLSX.utils.json_to_sheet(summaryData, { skipHeader: true });
+        XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
+
+        // Create Mappings Sheet
+        const mappingData = standardFields.map(field => ({
+            'Standard Field': field.displayName,
+            'Required': field.required ? 'Yes' : 'No',
+            'Mapped Client Header': config.config_data.columnMappings[field.key] || '--- NOT MAPPED ---'
+        }));
+        const wsMappings = XLSX.utils.json_to_sheet(mappingData);
+        XLSX.utils.book_append_sheet(wb, wsMappings, 'Column Mappings');
+
+        // Auto-size columns for better readability
+        wsSummary['!cols'] = [{ wch: 25 }, { wch: 50 }];
+        wsMappings['!cols'] = [{ wch: 25 }, { wch: 10 }, { wch: 50 }];
+
+        const fileName = `Config_${config.config_name.replace(/ /g, '_')}.xlsx`;
+        XLSX.writeFile(wb, fileName);
     }
     
     // --- TEAM & CATEGORY LOGIC ---
