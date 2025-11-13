@@ -331,6 +331,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sortedEdits.forEach(text => {
             const row = uncategorizedEditsTable.insertRow();
             row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`;
+            row.cells[0].firstChild.dataset.text = text;
             row.insertCell().innerHTML = createCategoryDropdown().outerHTML;
         });
 
@@ -338,6 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
         sortedNotes.forEach(noteText => {
             const row = uncategorizedNotesTable.insertRow();
             row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`;
+            row.cells[0].firstChild.dataset.text = noteText;
             row.insertCell().innerHTML = createCategoryDropdown().outerHTML;
         });
         
@@ -376,7 +378,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function saveNewRules() {
         const getRulesFromTable = (table) => Array.from(table.rows).map(row => ({
             row: row,
-            text: row.cells[0].textContent,
+            text: row.querySelector('.rule-text').dataset.text,
             category_id: row.cells[1].querySelector('select').value
         })).filter(rule => rule.category_id);
 
@@ -386,16 +388,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (editRulesToSave.length === 0 && noteRulesToSave.length === 0) return alert('No new rules were assigned to a category.');
 
         try {
+            const bodyEdit = JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest));
+            const bodyNote = JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest));
+
             await Promise.all([
-                editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: JSON.stringify(editRulesToSave) }) : Promise.resolve(),
-                noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: JSON.stringify(noteRulesToSave) }) : Promise.resolve()
+                editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: bodyEdit }) : Promise.resolve(),
+                noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: bodyNote }) : Promise.resolve()
             ]);
             
             alert('Rules saved successfully!');
             editRulesToSave.forEach(rule => rule.row.remove());
             noteRulesToSave.forEach(rule => rule.row.remove());
             
-            await loadRules(); // Reload rules to update the "Manage" tab and state
+            await loadRules();
             
             if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) {
                 rulesAssignmentContainer.style.display = 'none';
