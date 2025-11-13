@@ -1,3 +1,4 @@
+// This function handles CRUD operations for categorization rules.
 const { Pool } = require('pg');
 
 const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
@@ -16,7 +17,10 @@ exports.handler = async function(event) {
     try {
         switch (event.httpMethod) {
             case 'GET': {
-                const sql = `SELECT ${textField} as text, category_id FROM ${tableName};`;
+                const sql = `SELECT r.${textField} as text, r.category_id, c.category_name, t.team_name
+                             FROM ${tableName} r
+                             JOIN claim_categories c ON r.category_id = c.id
+                             JOIN teams t ON c.team_id = t.id;`;
                 const result = await db.query(sql);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
@@ -47,6 +51,16 @@ exports.handler = async function(event) {
                     client.release();
                 }
                 return { statusCode: 201, body: JSON.stringify({ message: 'Rules saved.' }) };
+            }
+            // NEW DELETE METHOD
+            case 'DELETE': {
+                const { text } = JSON.parse(event.body);
+                if (!text) {
+                    return { statusCode: 400, body: 'Missing rule text to delete.' };
+                }
+                const sql = `DELETE FROM ${tableName} WHERE ${textField} = $1;`;
+                await db.query(sql, [text]);
+                return { statusCode: 200, body: JSON.stringify({ message: 'Rule deleted.' }) };
             }
             default:
                 return { statusCode: 405, body: 'Method Not Allowed' };
