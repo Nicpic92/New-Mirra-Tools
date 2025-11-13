@@ -1,18 +1,14 @@
-// This function handles saving the rules that map edits/notes to categories.
+// This function handles saving the rules that map edits to categories.
 const { Pool } = require('pg');
 
 const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
 
 exports.handler = async function(event) {
     const db = getDb();
-    const { type } = event.queryStringParameters; // Expects 'edit' or 'note'
-
-    if (!['edit', 'note'].includes(type)) {
-        return { statusCode: 400, body: 'Invalid rule type specified.' };
-    }
-
-    const tableName = type === 'edit' ? 'claim_edit_rules' : 'claim_note_rules';
-    const textField = type === 'edit' ? 'edit_text' : 'note_keyword';
+    
+    // Simplified: This function now only handles edit rules.
+    const tableName = 'claim_edit_rules';
+    const textField = 'edit_text';
 
     try {
         switch (event.httpMethod) {
@@ -22,7 +18,6 @@ exports.handler = async function(event) {
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
-                // This function performs a batch "upsert" (insert or update).
                 const rules = JSON.parse(event.body);
                 if (!Array.isArray(rules) || rules.length === 0) {
                     return { statusCode: 400, body: 'Request body must be a non-empty array.' };
@@ -45,11 +40,10 @@ exports.handler = async function(event) {
                     await client.query('COMMIT');
                 } catch (e) {
                     await client.query('ROLLBACK');
-                    throw e; // This will be caught by the outer catch block
+                    throw e;
                 } finally {
                     client.release();
                 }
-
                 return { statusCode: 201, body: JSON.stringify({ message: 'Rules saved.' }) };
             }
             default:
