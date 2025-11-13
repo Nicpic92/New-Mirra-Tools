@@ -431,20 +431,11 @@
                 alert(`No claims found for team: ${teamName}`);
                 return;
             }
-            
+
             const claimsByCategory = teamClaims.reduce((acc, claim) => {
                 const category = claim.category;
                 if (!acc[category]) acc[category] = [];
-                acc[category].push({
-                    ...claim.original,
-                    'Priority Score': claim.priorityScore,
-                    'Assigned Team': claim.teamName,
-                    'Category': claim.category,
-                    'Categorization Source': claim.source,
-                    'Prov Ops Team Mbr': '',
-                    'PV Updated (Y/N)': '',
-                    'Notes': ''
-                });
+                acc[category].push(claim);
                 return acc;
             }, {});
 
@@ -453,7 +444,80 @@
 
             Object.keys(claimsByCategory).sort().forEach(categoryName => {
                 const claimsInCat = claimsByCategory[categoryName];
-                const ws = XLSX.utils.json_to_sheet(claimsInCat);
+                let reportData;
+                let ws;
+
+                switch (categoryName) {
+                    case 'Contract Issues':
+                    case 'Pay To':
+                    case 'W9 Research': {
+                        const providerMap = new Map();
+                        claimsInCat.forEach(claim => {
+                            const providerName = getVal(claim.original, 'providerName') || 'Unknown';
+                            const providerTin = getVal(claim.original, 'billingProviderTaxId') || 'Unknown';
+                            const key = `${providerName}|${providerTin}`;
+                            if (!providerMap.has(key)) {
+                                providerMap.set(key, {
+                                    'Billing Provider Name': providerName,
+                                    'Billing Provider Tax ID': providerTin,
+                                    'Count of Claims': 0
+                                });
+                            }
+                            providerMap.get(key)['Count of Claims']++;
+                        });
+                        reportData = Array.from(providerMap.values());
+                        reportData.sort((a, b) => b['Count of Claims'] - a['Count of Claims']);
+                        reportData.forEach(row => {
+                            row['Prov Ops Team Mbr'] = '';
+                            row['PV Updated (Y/N)'] = '';
+                            row['Notes'] = '';
+                        });
+                        ws = XLSX.utils.json_to_sheet(reportData);
+                        break;
+                    }
+
+                    case 'Rendering Provider': {
+                        const renderingMap = new Map();
+                        claimsInCat.forEach(claim => {
+                            const renderingName = getVal(claim.original, 'renderingProviderName') || 'Unknown';
+                            const renderingNpi = getVal(claim.original, 'renderingProviderNpi') || 'Unknown';
+                            const billingTin = getVal(claim.original, 'billingProviderTaxId') || 'Unknown';
+                            const key = `${renderingName}|${renderingNpi}|${billingTin}`;
+                            if (!renderingMap.has(key)) {
+                                renderingMap.set(key, {
+                                    'Rendering Provider Name': renderingName,
+                                    'Rendering Provider NPI': renderingNpi,
+                                    'Billing Provider TIN': billingTin
+                                });
+                            }
+                        });
+                        reportData = Array.from(renderingMap.values());
+                        reportData.sort((a, b) => a['Rendering Provider Name'].localeCompare(b['Rendering Provider Name']));
+                        reportData.forEach(row => {
+                            row['Prov Ops Team Mbr'] = '';
+                            row['PV Updated (Y/N)'] = '';
+                            row['Notes'] = '';
+                        });
+                         ws = XLSX.utils.json_to_sheet(reportData);
+                        break;
+                    }
+
+                    default: {
+                        reportData = claimsInCat.map(claim => ({
+                            ...claim.original,
+                            'Priority Score': claim.priorityScore,
+                            'Assigned Team': claim.teamName,
+                            'Category': claim.category,
+                            'Categorization Source': claim.source,
+                            'Prov Ops Team Mbr': '',
+                            'PV Updated (Y/N)': '',
+                            'Notes': ''
+                        }));
+                        ws = XLSX.utils.json_to_sheet(reportData);
+                        break;
+                    }
+                }
+                
                 const safeSheetName = categoryName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
                 XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
             });
