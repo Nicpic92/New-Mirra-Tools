@@ -63,7 +63,7 @@
                     </div>
                     <div class="col-md-6 mb-3">
                         <label for="clientName" class="form-label small fw-bold">Client Name</label>
-                        <input type="text" class="form-control form-control-sm" id="clientName" placeholder="Select a configuration" readonly>
+                        <input type="text" class="form-control form-select-sm" id="clientName" placeholder="Select a configuration" readonly>
                     </div>
                 </div>
             </div>
@@ -450,7 +450,8 @@
                 switch (categoryName) {
                     case 'Contract Issues':
                     case 'Pay To':
-                    case 'W9 Research': {
+                    case 'W9 Research':
+                    case 'SEQ_TFL': {
                         const providerMap = new Map();
                         claimsInCat.forEach(claim => {
                             const providerName = getVal(claim.original, 'providerName') || 'Unknown';
