@@ -284,6 +284,28 @@
         function analyzeAndProcessClaims(data) {
             const metrics = { totalClaims: 0, totalNetPayment: 0, claimsPend: 0, claimsDenied: 0, claimsByStatus: {}, claimsByState: {}, claimsByNetwork: {}, claimsByEdit: {}, providerCounts: { overall: {}, onhold: {}, mgmtreview: {} }};
             
+            // --- NEW: Aging Analysis Setup ---
+            const createAgingTable = () => ({
+                '0-20': { par: 0, nonpar: 0 },
+                '21-27': { par: 0, nonpar: 0 },
+                '28-30': { par: 0, nonpar: 0 },
+                '31-59': { par: 0, nonpar: 0 },
+                '60+': { par: 0, nonpar: 0 },
+            });
+            const agingData = {
+                combined: createAgingTable(),
+                active: createAgingTable(),
+                prebatch: createAgingTable()
+            };
+            const getAgeBin = (age) => {
+                if (age <= 20) return '0-20';
+                if (age <= 27) return '21-27';
+                if (age <= 30) return '28-30';
+                if (age <= 59) return '31-59';
+                return '60+';
+            };
+            const activeStatuses = ['PEND', 'DRAFT', 'ONHOLD', 'MANAGEMENTREVIEW', 'APPROVED'];
+
             const claims = data.map(rawClaim => {
                 const processedClaim = {
                     state: (getVal(rawClaim, 'state') || 'UNKNOWN').toString().toUpperCase().trim(),
@@ -297,9 +319,10 @@
                     original: rawClaim
                 };
 
+                // --- Standard Metric Aggregation ---
                 metrics.totalClaims++;
                 if (!isNaN(processedClaim.netPayment)) metrics.totalNetPayment += processedClaim.netPayment;
-                if (processedClaim.state === 'PEND') metrics.claimsPend++;
+                if (processedClaim.status === 'PEND') metrics.claimsPend++;
                 if (processedClaim.status === 'DENY') metrics.claimsDenied++;
                 metrics.claimsByStatus[processedClaim.status] = (metrics.claimsByStatus[processedClaim.status] || 0) + 1;
                 metrics.claimsByState[processedClaim.state] = (metrics.claimsByState[processedClaim.state] || 0) + 1;
@@ -308,9 +331,20 @@
                 metrics.providerCounts.overall[processedClaim.providerName] = (metrics.providerCounts.overall[processedClaim.providerName] || 0) + 1;
                 if (processedClaim.state === 'ONHOLD') metrics.providerCounts.onhold[processedClaim.providerName] = (metrics.providerCounts.onhold[processedClaim.providerName] || 0) + 1;
                 if (processedClaim.state === 'MANAGEMENTREVIEW') metrics.providerCounts.mgmtreview[processedClaim.providerName] = (metrics.providerCounts.mgmtreview[processedClaim.providerName] || 0) + 1;
+                
+                // --- NEW: Aging Analysis Data Collection ---
+                const ageBin = getAgeBin(processedClaim.age);
+                const networkKey = (processedClaim.networkStatus.toUpperCase().includes('NON') || processedClaim.networkStatus.toUpperCase().includes('OUT')) ? 'nonpar' : 'par';
+                
+                agingData.combined[ageBin][networkKey]++;
+                if (activeStatuses.includes(processedClaim.status)) {
+                    agingData.active[ageBin][networkKey]++;
+                }
+                if (processedClaim.state === 'PREBATCH') {
+                    agingData.prebatch[ageBin][networkKey]++;
+                }
 
                 processedClaim.isActionable = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'].includes(processedClaim.state);
-
                 if (processedClaim.isActionable) {
                     const categoryInfo = getClaimCategory(rawClaim);
                     processedClaim.category = categoryInfo.category;
@@ -327,11 +361,42 @@
                 return processedClaim;
             });
             
+            // --- Standard Top 10 Calculations ---
             const getTop10 = (counts, filterKey = null) => Object.entries(counts).filter(([k]) => k !== filterKey).sort(([, a], [, b]) => b - a).slice(0, 10).reduce((acc, [l, d]) => (acc.labels.push(l), acc.data.push(d), acc), { labels: [], data: [] });
             metrics.topEdits = getTop10(metrics.claimsByEdit, 'No Edits');
             metrics.topProvidersOverall = getTop10(metrics.providerCounts.overall);
             metrics.topProvidersOnHold = getTop10(metrics.providerCounts.onhold);
             metrics.topProvidersMgmtReview = getTop10(metrics.providerCounts.mgmtreview);
+            
+            // --- NEW: Finalize Standard Tables (Status/State) ---
+            const processSimpleTable = (counts) => ({ labels: Object.keys(counts).sort(), data: Object.values(counts) });
+            metrics.claimsByFinalStatus = processSimpleTable(metrics.claimsByStatus);
+            metrics.claimsByWorkflowState = processSimpleTable(metrics.claimsByState);
+
+            // --- NEW: Finalize Aging Tables ---
+            const finalizeAgingTable = (tableData) => {
+                const final = { bins: {}, totals: { par: 0, nonpar: 0, grand: 0 }};
+                for (const bin in tableData) {
+                    const par = tableData[bin].par;
+                    const nonpar = tableData[bin].nonpar;
+                    final.bins[bin] = { par, nonpar, total: par + nonpar };
+                    final.totals.par += par;
+                    final.totals.nonpar += nonpar;
+                }
+                final.totals.grand = final.totals.par + final.totals.nonpar;
+                const sixtyPlusPar = final.bins['60+']?.par || 0;
+                const sixtyPlusNonPar = final.bins['60+']?.nonpar || 0;
+                final.bins['60+ Percent'] = {
+                    par: final.totals.par > 0 ? ((sixtyPlusPar / final.totals.par) * 100).toFixed(1) + '%' : '0.0%',
+                    nonpar: final.totals.nonpar > 0 ? ((sixtyPlusNonPar / final.totals.nonpar) * 100).toFixed(1) + '%' : '0.0%',
+                    total: final.totals.grand > 0 ? (((sixtyPlusPar + sixtyPlusNonPar) / final.totals.grand) * 100).toFixed(1) + '%' : '0.0%'
+                };
+                return final;
+            };
+            metrics.agingCombined = finalizeAgingTable(agingData.combined);
+            metrics.agingActive = finalizeAgingTable(agingData.active);
+            metrics.agingPrebatch = finalizeAgingTable(agingData.prebatch);
+
 
             // --- DYNAMICALLY PROCESS CUSTOM WIDGETS ---
             const selectedConfigId = parseInt(document.getElementById('configSelector').value, 10);
@@ -616,34 +681,61 @@
                     case 'table':
                     case 'custom_table': {
                         const tableData = prepareTableData(section.id);
-                        const definition = section.type === 'table' 
-                            ? { columns: [{header: 'Label', dataKey: 'label'}, {header: 'Value', dataKey: 'data'}]} // Fallback for old standard tables
-                            : section.definition;
+                        const allWidgets = [...availablePdfWidgets, ...(config.config_data.pdfConfig.customWidgets || [])];
+                        const widgetDefinition = allWidgets.find(w => w.id === section.id);
                         
-                        // Use columns from the definition
-                        const columns = definition?.columns;
-                        if (columns && tableData.length > 0) {
+                        if (widgetDefinition && tableData.length > 0) {
+                            const columns = widgetDefinition.columns;
                             const head = [columns.map(c => c.header)];
                             const body = tableData.map(row => columns.map(col => {
                                 let val = row[col.dataKey];
-                                if (typeof val === 'number' && definition.metricType === 'sum') {
+                                if (typeof val === 'number' && widgetDefinition.metricType === 'sum') {
                                     return val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
                                 }
                                 return val;
                             }));
                             
+                            pdf.autoTable({ startY: currentY, head, body, theme: 'striped', headStyles: { fillColor: [70, 90, 108] } });
+                            currentY = pdf.previousAutoTable.finalY + 20;
+                        } else {
+                            pdf.setFont('helvetica', 'normal');
+                            pdf.setFontSize(10);
+                            pdf.text('No data available for this section.', margin, currentY);
+                            currentY += 20;
+                        }
+                        break;
+                    }
+                    case 'aging_table': {
+                        const agingData = aggregatedMetrics[section.id];
+                        if (agingData) {
+                            const head = [['Aging', 'Par', 'Non Par', 'Grand Total']];
+                            const body = [];
+                            const bins = ['0-20', '21-27', '28-30', '31-59', '60+'];
+                            bins.forEach(bin => {
+                                const binData = agingData.bins[bin];
+                                body.push([bin, binData.par.toLocaleString(), binData.nonpar.toLocaleString(), binData.total.toLocaleString()]);
+                            });
+                            const percData = agingData.bins['60+ Percent'];
+                            body.push(['60+ Percentage', percData.par, percData.nonpar, percData.total]);
+                            body.push(['Grand Total', agingData.totals.par.toLocaleString(), agingData.totals.nonpar.toLocaleString(), agingData.totals.grand.toLocaleString()]);
+
                             pdf.autoTable({
                                 startY: currentY,
                                 head: head,
                                 body: body,
                                 theme: 'striped',
                                 headStyles: { fillColor: [70, 90, 108] },
+                                didParseCell: (data) => {
+                                    if (data.row.raw[0] === '60+ Percentage' || data.row.raw[0] === 'Grand Total') {
+                                        data.cell.styles.fontStyle = 'bold';
+                                    }
+                                }
                             });
                             currentY = pdf.previousAutoTable.finalY + 20;
                         } else {
                             pdf.setFont('helvetica', 'normal');
                             pdf.setFontSize(10);
-                            pdf.text('No data available for this section.', margin, currentY);
+                            pdf.text('No aging data available.', margin, currentY);
                             currentY += 20;
                         }
                         break;
