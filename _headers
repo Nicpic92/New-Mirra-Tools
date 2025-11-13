@@ -1,0 +1,5 @@
+# This file sets custom headers for your site
+
+# Protect the /admin.html page with a password
+/admin.html
+  Basic-Auth: admin:${ADMIN_PASSWORD}
