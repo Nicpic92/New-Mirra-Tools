@@ -1,0 +1,641 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Integrated Claims Dashboard & Analytics Engine</title>
+    <!-- Bootstrap 5 for Layout and Styling -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Bootstrap Icons for Buttons -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <!-- Chart.js for Graphs -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <!-- SheetJS (XLSX) & PapaParse (CSV) Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
+    <!-- Libraries for Advanced PDF Generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
+    <style>
+        :root {
+            --primary-color: #0d6efd;
+            --secondary-color: #f8f9fa;
+        }
+        body { background-color: white; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; }
+        .dashboard-card { 
+            border-radius: 0.375rem; 
+            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); 
+            border: 1px solid #dee2e6;
+            border-left-width: 4px;
+            padding: 1.25rem;
+        }
+        .metric-value { font-size: 2.25rem; font-weight: 700; color: #212529; }
+        .metric-label { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; }
+        .chart-container { min-height: 380px; background-color: white; padding: 20px; border-radius: 0.5rem; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); }
+        .section-header { background-color: #465a6c; color: white; padding: 8px 15px; border-radius: 0.25rem; margin-bottom: 1rem; }
+        .aging-table-header { background-color: #465a6c; color: white; padding: 8px 15px; border-radius: 0.25rem; font-size: 1.1rem; margin-top: 1rem; }
+        .aging-table thead { background-color: #f1f4f6; }
+        #dashboardContent { display: none; }
+        #work-queue-table th { background-color: #005A9C; color: white; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <div class="container-fluid p-4">
+        <!-- Header Section -->
+        <header class="mb-4">
+            <img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAZCAYAAAC115MjAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAARRSURBVChTPZf/a9NXHMc/520kLg3L+m2DIsO2pKGv+i8u/AN2d9FNHHRwdr3sDqYru93VzU5XV7c3o05FmJ2YqW432B/A68qKVgN6KVoLqS11475c7nN/eR5+25f6eRy9Dw79dE/u+RzP53O+z+f+uD/wPz3uA1fC42BxeBQ8DheDh8HDZfD4WIKzVqv18wDXtrY25s2bx2tra4kX+n54s/M64N/gH5EHgP/7xGQSqe7u7lYhV3Z2Nua9vLzg6enpiF5fXxs/pW/gT+BvIF8A/gb+D3yKq4s/cIX2z/sT29vbH9s2fPLkSbS2trb68OHDH2uVSqXgVqv13wC/AwCgVCrl6unpATs7O9f5z3kK2d/fD6WlpQ9fXV3t5b3LsbGx/Nra2pIbnJ+f/w+Qy+W0W61Wqf56vR729/f/kYmRkZGMYwDwwv17eno251z5dCAQyC0Wi3k/Pz87f7+A0+m0f3Nzc3s4HF65yWZycnL24x+5XC4AIBqNQgUCAcDOzs7O1tZWvL+/P/F+f38/xGIxDAwM/JpZ1GAwSA+HQ6pQKMjJkycxsW6r1UoFAgEMDAwA1NbWwuLiYgwODsLl5eXoQSAQAAgEAhgYGPg1s6jBYJCeSqV0WCwWub+/H/f39+P8/HyPzwCgvb0dAICJiQmcTqflM2tO7+/vTxx+/vx5jMVi4OXl5X9+SAYGBgCcnZ2BIBAIkMvlYDAY/s1sKhgMkobD4Wr5fD6lVqs1Xl5exvX19b/X19e/19fX/4/5AOTz+QCA6urqIC4uDoFAIFqvzS0xMTHxh/sB+Xw+FkqlUqvVajWfz4eBgQF+s181Gg01GAxSTqcTYTabEY/HYWdnZ2fr6uoS4z09PUfUajUrVqsVn88nAODs7AxxDeDk5IQpFAopFou1ZtfrNb7pSRQKEQ8fPhzL5/MBnJ2dgXg8/jX/Xzkcju/j8VguFotzTafTmUwmf3Z3d+f0ej0Wi8XpNEql0h+LRYIgCGf39/fLZ8kIBAKEgYGBFysUCgCAi4sLfL58eXl5GSA+Pj6W0+l0Xl5expw1qMVisVgs5tY8Gg22tbVlX1hY+EVFRUVnZ2fBbrd/+3a7/bN+s+v1erFcrvzr6+v/JpPJ4J35xIkTJ3p6eiKz2Xxar9e/+eXl5U8sFitfX1+PcXJyYtq2bQ+n0znnzMxMkMvlcnp6+o/v7+/r7e2t1Wr1u/b29n+1tbXlOI4vW1paHh8fD7lcrtfr9etLS0ufXlxc/PNf319fX//P/wKkUql0OByW0Wj8sFqtYLPZH38+n/+0XC6/n0wmP8lk8s/Z7HY7KBSK/1wul+8qlcq/Vqv1XygU/uX19fUvnU7n/Uaj8f9KpfI/oVDoX6PROBgM/m9sQ+w7g/8/l8sVsNls/qJSqb+lUumPFy9efF6r1T6bzeZ/stnsv6vV6h/X6/X/z6f3k0Ufgs2LwOLwCHgcrAaPw8Pgg/AhOM4X/n/D31/B/gU1Fh0wWlC6GgAAAABJRU5ErkJggg==' alt="Mirra Logo" style="height: 24px; margin-bottom: 10px;" id="logoImage">
+            <h1 class="display-6" style="color: #0d6efd;" id="mainTitle">Claims Processing Daily Dashboard (XLSX)</h1>
+        </header>
+
+        <!-- File Input Section -->
+        <div class="card p-3 mb-4 bg-light border-0">
+            <h5 class="card-title fw-bold">1. Upload Claims Data</h5>
+            <label for="reportFile" class="form-label">Select an XLSX or CSV file to begin analysis.</label>
+            <input class="form-control" type="file" id="reportFile" accept=".xlsx, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
+        </div>
+
+        <div id="dashboardContent">
+            <!-- PDF OPTIONS -->
+            <div class="pdf-options card p-3 mb-4">
+                <h5 class="card-title fw-bold">2. PDF Report Options</h5>
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label for="clientName" class="form-label small fw-bold">Client Name</label>
+                        <input type="text" class="form-control form-control-sm" id="clientName" placeholder="Enter client name">
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label for="agingCalc" class="form-label small fw-bold">Aging Calculation Basis</label>
+                        <select class="form-select form-select-sm" id="agingCalc">
+                            <option value="legacy">31+ (Legacy/30-Day)</option>
+                            <option value="cms" selected>31-59 / 60+ (CMS/60-Day)</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="form-label small fw-bold d-block">&nbsp;</label>
+                        <button class="btn btn-dark w-100" id="generatePdfBtn">Download Detailed Report as PDF</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab Navigation -->
+            <ul class="nav nav-tabs" id="mainTabs" role="tablist">
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-pane" type="button" role="tab">Full Analytics Dashboard</button>
+                </li>
+                <li class="nav-item" role="presentation">
+                    <button class="nav-link" id="work-queue-tab" data-bs-toggle="tab" data-bs-target="#work-queue-pane" type="button" role="tab">Operational Work Queue</button>
+                </li>
+            </ul>
+
+            <!-- Tab Content -->
+            <div class="tab-content border border-top-0 p-3 bg-white">
+                <!-- Dashboard Pane -->
+                <div class="tab-pane fade show active" id="dashboard-pane" role="tabpanel">
+                    <div id="executive-summary-section" class="dashboard-section">
+                        <h2 class="h4 text-muted mb-4" style="font-weight: 300;">Executive Summary</h2>
+                        <div class="row g-4 mb-5" id="executive-summary-cards">
+                            <!-- Cards will be dynamically inserted here -->
+                        </div>
+                    </div>
+
+                    <div id="workflow-network-section" class="dashboard-section">
+                        <div class="section-header"><h2 class="h5">Workflow & Network Analysis</h2></div>
+                        <div class="row g-4 mb-5">
+                            <div class="col-lg-4 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Claims Volume by Final Status</h6><canvas id="statusChart"></canvas></div></div>
+                            <div class="col-lg-4 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Claims Volume by Workflow State</h6><canvas id="stateChart"></canvas></div></div>
+                            <div class="col-lg-4 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">In-Network vs. Out-of-Network</h6><canvas id="networkChart"></canvas></div></div>
+                        </div>
+                    </div>
+                    
+                    <div id="root-cause-section" class="dashboard-section">
+                         <div class="section-header"><h2 class="h5">Root Cause Analysis</h2></div>
+                         <div class="row g-4 mb-5">
+                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Claim Edits</h6><canvas id="editsChart"></canvas></div></div>
+                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Billing Providers (Overall)</h6><canvas id="providerOverallChart"></canvas></div></div>
+                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Billing Providers (On Hold)</h6><canvas id="providerOnHoldChart"></canvas></div></div>
+                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Billing Providers (Mgmt Review)</h6><canvas id="providerMgmtReviewChart"></canvas></div></div>
+                        </div>
+                    </div>
+
+                    <div id="aging-analysis-section" class="dashboard-section">
+                        <div class="row g-4 mb-3">
+                            <div class="col-12"><h4 class="aging-table-header">Combined Claim Counts (Active + Prebatch)</h4></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Overall Combined Counts</h6><p class="text-muted small m-0">Filters: All Clean Claims (Overall Only)</p><div id="agingCombinedOverallTable"></div></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Combined Counts (DSNP)</h6><p class="text-muted small m-0">Filters: All Clean Claims (DSNP Only)</p><div id="agingCombinedDSNPTable"></div></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Combined Counts (Non DSNP)</h6><p class="text-muted small m-0">Filters: All Clean Claims (Non DSNP Only)</p><div id="agingCombinedNonDSNPTable"></div></div>
+                        </div>
+                        <div class="row g-4 mb-3">
+                            <div class="col-12"><h4 class="aging-table-header">Active-Only Claim Counts Analysis</h4></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Active Counts (Overall)</h6><p class="text-muted small m-0">Filters: Clean Claims, Overall Only, All but Prebatch</p><div id="agingActiveOverallTable"></div></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Active Counts (DSNP)</h6><p class="text-muted small m-0">Filters: Clean Claims, DSNP Only, All but Prebatch</p><div id="agingActiveDSNPTable"></div></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Active Counts (Non DSNP)</h6><p class="text-muted small m-0">Filters: Clean Claims, Non DSNP Only, All but Prebatch</p><div id="agingActiveNonDSNPTable"></div></div>
+                        </div>
+                        <div class="row g-4 mb-5">
+                            <div class="col-12"><h4 class="aging-table-header">Prebatch Counts Analysis</h4></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Prebatch Counts (Overall)</h6><p class="text-muted small m-0">Filters: Clean Claims, Overall Only, Prebatch Only</p><div id="agingPrebatchOverallTable"></div></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Prebatch Counts (DSNP)</h6><p class="text-muted small m-0">Filters: Clean Claims, DSNP Only, Prebatch Only</p><div id="agingPrebatchDSNPTable"></div></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Prebatch Counts (Non DSNP)</h6><p class="text-muted small m-0">Filters: Clean Claims, Non DSNP Only, Prebatch Only</p><div id="agingPrebatchNonDSNPTable"></div></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tab-pane fade" id="work-queue-pane" role="tabpanel">
+                    <div class="section-header"><h2 class="h5">Intelligent Operational Work Queue</h2></div>
+                    <div class="card p-3 mb-3 bg-light border-0">
+                        <div class="row align-items-end">
+                            <div class="col-md-4">
+                                <label for="categoryFilter" class="form-label fw-bold">Filter by Category</label>
+                                <select id="categoryFilter" class="form-select">
+                                    <option value="all" selected>All Actionable Categories</option>
+                                </select>
+                            </div>
+                            <div class="col-md-8 text-md-end">
+                                 <button id="downloadCategoryReportsBtn" class="btn btn-success mt-3 mt-md-0">
+                                    <i class="bi bi-download"></i> Download All Reports by Category
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="table-responsive">
+                        <table class="table table-striped table-hover" id="work-queue-table">
+                            <thead>
+                                <tr>
+                                    <th data-sort="priorityScore">Priority Score</th>
+                                    <th data-sort="category">Category</th>
+                                    <th data-sort="team">Assigned Team</th>
+                                    <th data-sort="claimId">Claim ID</th>
+                                    <th data-sort="age">Age (Days)</th>
+                                    <th data-sort="netPayment">Amount at Risk</th>
+                                    <th data-sort="providerName">Billing Provider</th>
+                                </tr>
+                            </thead>
+                            <tbody id="work-queue-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+    // --- Global Variables ---
+    let allClaimsData = [];
+    let aggregatedMetrics = {};
+    let myCharts = {};
+    let currentSort = { column: 'priorityScore', direction: 'desc' };
+
+    // --- Helper function to safely get data from claim object ---
+    const getVal = (claim, keys) => {
+        const keyArray = Array.isArray(keys) ? keys : [keys];
+        for (const key of keyArray) {
+            const claimKey = Object.keys(claim).find(k => k.trim().toLowerCase() === key.toLowerCase());
+            if (claimKey && claim[claimKey] !== undefined && claim[claimKey] !== null) {
+                return claim[claimKey];
+            }
+        }
+        return undefined;
+    };
+
+    // --- Event Listeners ---
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('reportFile').addEventListener('change', handleFile);
+        document.getElementById('generatePdfBtn').addEventListener('click', generateStructuredPDF);
+        document.getElementById('agingCalc').addEventListener('change', () => {
+            if (allClaimsData.length > 0) renderAgingTables(allClaimsData);
+        });
+        document.getElementById('work-queue-table').querySelector('thead').addEventListener('click', (e) => {
+            const header = e.target.closest('th');
+            if (!header || !header.dataset.sort) return;
+            const sortKey = header.dataset.sort;
+            currentSort.direction = (currentSort.column === sortKey && currentSort.direction === 'desc') ? 'asc' : 'desc';
+            currentSort.column = sortKey;
+            renderWorkQueue(allClaimsData);
+        });
+        document.getElementById('categoryFilter').addEventListener('change', () => renderWorkQueue(allClaimsData));
+        document.getElementById('downloadCategoryReportsBtn').addEventListener('click', downloadCategoryReports);
+    });
+
+    // --- Main file handling and processing logic ---
+    function handleFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const processAndRender = (data) => {
+            try {
+                const processedData = analyzeAndProcessClaims(data);
+                allClaimsData = processedData.claims;
+                aggregatedMetrics = processedData.metrics;
+                renderDashboard(allClaimsData, aggregatedMetrics);
+                populateCategoryFilter(allClaimsData);
+                renderWorkQueue(allClaimsData);
+                document.getElementById('dashboardContent').style.display = 'block';
+            } catch (error) {
+                console.error("An error occurred during file processing:", error);
+                alert("Failed to process the file. Please check the console for more details.");
+            }
+        };
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            if (file.name.endsWith('.csv')) {
+                Papa.parse(e.target.result, { header: true, skipEmptyLines: true, complete: (res) => processAndRender(res.data) });
+            } else {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                processAndRender(XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]));
+            }
+        };
+        file.name.endsWith('.csv') ? reader.readAsText(file) : reader.readAsArrayBuffer(file);
+    }
+    
+    // --- Operational Logic Functions ---
+    function getClaimCategory(claim) {
+        const notes = (getVal(claim, ['Claim Notes', 'Notes']) || '').toLowerCase();
+        const edits = (getVal(claim, ['Claim Edits', 'Edits']) || '').toLowerCase();
+        
+        if (notes.includes('w9')) return 'Action Required: Missing W9';
+        
+        const hasAuthKeyword = notes.includes('auth') || edits.includes('auth') || notes.includes('precertification') || edits.includes('precertification');
+        const hasDenyKeyword = notes.includes('denied') || notes.includes('missing') || notes.includes('no ') || notes.includes('absent') || notes.includes('not found');
+        if (hasAuthKeyword && hasDenyKeyword) return 'Action Required: No Authorization';
+        
+        if (notes.includes('duplicate') || edits.includes('duplicate')) return 'On Hold: Duplicate';
+        
+        const totalCharges = parseFloat(getVal(claim, ['Total Charges', 'Billed Amount']) || 0);
+        const hasHDRKeyword = notes.includes('high dollar') || notes.includes('hdr') || notes.includes('payment >');
+        if (hasHDRKeyword || totalCharges > 50000) return 'On Hold: High Dollar Review';
+
+        return 'Needs Triage';
+    }
+
+    function getPriorityScore(claim) {
+        const totalCharges = parseFloat(getVal(claim, ['Total Charges', 'Billed Amount']) || 0);
+        const age = parseInt(claim.age || 0);
+        const status = (claim.status || '').toUpperCase();
+        const network = (claim.networkStatus || '').toLowerCase();
+        
+        let score = 0;
+        score += (totalCharges / 500);
+        score += (age * 1.5);
+        if (status === 'DENY') score += 100;
+        
+        if (network.includes('in network')) {
+            if (age >= 25) score += 350; else if (age >= 15) score += 150;
+        } else if (network.includes('out of network')) {
+            if (age >= 55) score += 350; else if (age >= 45) score += 150;
+        }
+        return Math.round(score);
+    }
+
+    // --- Comprehensive Data Analysis ---
+    function analyzeAndProcessClaims(data) {
+        const metrics = {
+            totalClaims: 0, totalNetPayment: 0, claimsPend: 0, claimsDenied: 0,
+            claimsMgmtReview: 0, claimsOnHold: 0, claimsPrebatch: 0,
+            totalCleanAge: 0, cleanAgeCount: 0, totalRegularAge: 0, regularAgeCount: 0,
+            claimsByStatus: {}, claimsByState: {}, claimsByNetwork: {}, claimsByEdit: {},
+            providerCounts: { overall: {}, onhold: {}, mgmtreview: {} },
+            totalDSNPClaims: 0
+        };
+
+        const claims = data.map(claim => {
+            const processedClaim = {
+                state: (getVal(claim, ['Claim State', 'State']) || 'UNKNOWN').toString().toUpperCase().trim(),
+                status: (getVal(claim, ['Claim Status', 'Status']) || 'UNKNOWN').toString().toUpperCase().trim(),
+                age: parseInt(getVal(claim, ['Age', 'Claim Age']) || 0),
+                cleanAge: parseInt(getVal(claim, ['Clean Age', 'CleanAge']) || getVal(claim, ['Age', 'Claim Age']) || 0),
+                netPayment: parseFloat(getVal(claim, ['TotalNetPaymentAmt', 'Net Payment']) || 0),
+                networkStatus: getVal(claim, ['NetworkStatus', 'Network Status']) || 'Unknown',
+                edit: getVal(claim, ['Claim Edits', 'Edits']) || 'No Edits',
+                providerName: getVal(claim, ['Billing Provider Name', 'Provider']) || 'Unknown',
+                dsnp: (getVal(claim, ['DSNP or Non DSNP', 'DSNP']) || '').toLowerCase(),
+                claimId: getVal(claim, ['Claim ID', 'Claim Number']) || 'N/A',
+                original: claim 
+            };
+
+            metrics.totalClaims++;
+            if (!isNaN(processedClaim.cleanAge) && processedClaim.cleanAge >= 0) { if(processedClaim.status !== 'DENY') { metrics.totalCleanAge += processedClaim.cleanAge; metrics.cleanAgeCount++; } }
+            if (!isNaN(processedClaim.age) && processedClaim.age >= 0) { metrics.totalRegularAge += processedClaim.age; metrics.regularAgeCount++; }
+            if (!isNaN(processedClaim.netPayment)) { metrics.totalNetPayment += processedClaim.netPayment; }
+            
+            if (processedClaim.state === 'PEND') metrics.claimsPend++;
+            if (processedClaim.status === 'DENY') metrics.claimsDenied++;
+            if (processedClaim.state === 'MANAGEMENTREVIEW') metrics.claimsMgmtReview++;
+            if (processedClaim.state === 'ONHOLD') metrics.claimsOnHold++;
+            if (processedClaim.state === 'PREBATCH') metrics.claimsPrebatch++;
+            
+            metrics.claimsByStatus[processedClaim.status] = (metrics.claimsByStatus[processedClaim.status] || 0) + 1;
+            metrics.claimsByState[processedClaim.state] = (metrics.claimsByState[processedClaim.state] || 0) + 1;
+            metrics.claimsByNetwork[processedClaim.networkStatus] = (metrics.claimsByNetwork[processedClaim.networkStatus] || 0) + 1;
+            metrics.claimsByEdit[processedClaim.edit] = (metrics.claimsByEdit[processedClaim.edit] || 0) + 1;
+            metrics.providerCounts.overall[processedClaim.providerName] = (metrics.providerCounts.overall[processedClaim.providerName] || 0) + 1;
+            if (processedClaim.state === 'ONHOLD') metrics.providerCounts.onhold[processedClaim.providerName] = (metrics.providerCounts.onhold[processedClaim.providerName] || 0) + 1;
+            if (processedClaim.state === 'MANAGEMENTREVIEW') metrics.providerCounts.mgmtreview[processedClaim.providerName] = (metrics.providerCounts.mgmtreview[processedClaim.providerName] || 0) + 1;
+            if (processedClaim.dsnp === 'dsnp') metrics.totalDSNPClaims++;
+            
+            processedClaim.isActionable = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'].includes(processedClaim.state) || processedClaim.status === 'DENY';
+            if (processedClaim.isActionable) {
+                let category = getClaimCategory(claim);
+                let team = 'Onshore';
+                if (processedClaim.dsnp === 'non dsnp' && (processedClaim.networkStatus || '').toLowerCase().includes('out of network')) {
+                    team = 'Offshore';
+                    category = `Offshore: ${category}`;
+                }
+                processedClaim.category = category;
+                processedClaim.team = team;
+                processedClaim.priorityScore = getPriorityScore(processedClaim);
+            } else {
+                processedClaim.category = 'N/A';
+                processedClaim.team = 'N/A';
+                processedClaim.priorityScore = -1;
+            }
+            return processedClaim;
+        });
+
+        const getTop10 = (counts, filterKey = null) => Object.entries(counts).filter(([k])=> k !== filterKey).sort(([,a],[,b])=>b-a).slice(0,10).reduce((acc, [l,d])=>(acc.labels.push(l), acc.data.push(d), acc), {labels:[], data:[]});
+        metrics.avgCleanAge = metrics.cleanAgeCount > 0 ? (metrics.totalCleanAge / metrics.cleanAgeCount).toFixed(1) : 0;
+        metrics.avgRegularAge = metrics.regularAgeCount > 0 ? (metrics.totalRegularAge / metrics.regularAgeCount).toFixed(1) : 0;
+        metrics.topEdits = getTop10(metrics.claimsByEdit, 'No Edits');
+        metrics.topProvidersOverall = getTop10(metrics.providerCounts.overall);
+        metrics.topProvidersOnHold = getTop10(metrics.providerCounts.onhold);
+        metrics.topProvidersMgmtReview = getTop10(metrics.providerCounts.mgmtreview);
+
+        return { claims, metrics };
+    }
+
+    // --- RENDER FUNCTIONS for the web dashboard ---
+    function renderDashboard(claims, metrics) {
+        const fNum = (num) => num.toLocaleString('en-US');
+        const fCur = (num) => num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+        
+        document.getElementById('executive-summary-cards').innerHTML = `
+            <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #0d6efd;"><div class="metric-label" style="color: #0d6efd;">TOTAL CLAIMS</div><div class="metric-value">${fNum(metrics.totalClaims)}</div></div></div>
+            <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #198754;"><div class="metric-label" style="color: #198754;">TOTAL NET PAYMENT (PENDING)</div><div class="metric-value">${fCur(metrics.totalNetPayment)}</div></div></div>
+            <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #ffc107;"><div class="metric-label" style="color: #ffc107;">CLAIMS PEND STATUS</div><div class="metric-value">${fNum(metrics.claimsPend)}</div></div></div>
+            <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #dc3545;"><div class="metric-label" style="color: #dc3545;">CLAIMS DENIED</div><div class="metric-value">${fNum(metrics.claimsDenied)}</div></div></div>
+            <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #fd7e14;"><div class="metric-label" style="color:#fd7e14;">AVG. CLEAN AGE</div><div class="metric-value">${metrics.avgCleanAge} days</div></div></div>
+            <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #212529;"><div class="metric-label text-dark">AVG. AGE (OVERALL)</div><div class="metric-value">${metrics.avgRegularAge} days</div></div></div>`;
+
+        Object.values(myCharts).forEach(chart => chart.destroy());
+        const doughnutOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: true, position: 'bottom' } } };
+        const barOpts = { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } };
+        const createChart = (id, type, data, options) => new Chart(document.getElementById(id), { type, data, options });
+        
+        myCharts.statusChart = createChart('statusChart', 'doughnut', { labels: Object.keys(metrics.claimsByStatus), datasets: [{ data: Object.values(metrics.claimsByStatus) }] }, doughnutOpts);
+        myCharts.stateChart = createChart('stateChart', 'doughnut', { labels: Object.keys(metrics.claimsByState), datasets: [{ data: Object.values(metrics.claimsByState) }] }, doughnutOpts);
+        myCharts.networkChart = createChart('networkChart', 'doughnut', { labels: Object.keys(metrics.claimsByNetwork), datasets: [{ data: Object.values(metrics.claimsByNetwork) }] }, doughnutOpts);
+        myCharts.editsChart = createChart('editsChart', 'bar', { labels: metrics.topEdits.labels, datasets: [{ data: metrics.topEdits.data, backgroundColor: '#465a6c' }] }, barOpts);
+        myCharts.providerOverallChart = createChart('providerOverallChart', 'bar', { labels: metrics.topProvidersOverall.labels, datasets: [{ data: metrics.topProvidersOverall.data, backgroundColor: '#007bff' }] }, barOpts);
+        myCharts.providerOnHoldChart = createChart('providerOnHoldChart', 'bar', { labels: metrics.topProvidersOnHold.labels, datasets: [{ data: metrics.topProvidersOnHold.data, backgroundColor: '#ffc107' }] }, barOpts);
+        myCharts.providerMgmtReviewChart = createChart('providerMgmtReviewChart', 'bar', { labels: metrics.topProvidersMgmtReview.labels, datasets: [{ data: metrics.topProvidersMgmtReview.data, backgroundColor: '#dc3545' }] }, barOpts);
+        
+        renderAgingTables(claims);
+    }
+    
+    // --- Aging Analysis Functions ---
+    function renderAgingTables(data) {
+        const isDSNP = c => c.dsnp === 'dsnp';
+        const isClean = c => c.status !== 'DENY';
+        const isActive = c => c.state !== 'PREBATCH';
+        const isPrebatch = c => c.state === 'PREBATCH';
+
+        const dsnpContainers = document.querySelectorAll('#agingCombinedDSNPTable, #agingActiveDSNPTable, #agingPrebatchDSNPTable, #agingCombinedNonDSNPTable, #agingActiveNonDSNPTable, #agingPrebatchNonDSNPTable');
+        dsnpContainers.forEach(el => {
+            if (el && el.parentElement) {
+                el.parentElement.style.display = aggregatedMetrics.totalDSNPClaims > 0 ? 'block' : 'none';
+            }
+        });
+        
+        const setTableHTML = (id, data) => {
+            const element = document.getElementById(id);
+            if (element) {
+                element.innerHTML = createAgingTableHTML(data);
+            } else {
+                console.warn(`Aging table element with ID '${id}' not found.`);
+            }
+        };
+
+        setTableHTML('agingCombinedOverallTable', calculateAging(data, c => isClean(c)));
+        setTableHTML('agingCombinedDSNPTable', calculateAging(data, c => isClean(c) && isDSNP(c)));
+        setTableHTML('agingCombinedNonDSNPTable', calculateAging(data, c => isClean(c) && !isDSNP(c)));
+        setTableHTML('agingActiveOverallTable', calculateAging(data, c => isClean(c) && isActive(c)));
+        setTableHTML('agingActiveDSNPTable', calculateAging(data, c => isClean(c) && isActive(c) && isDSNP(c)));
+        setTableHTML('agingActiveNonDSNPTable', calculateAging(data, c => isClean(c) && isActive(c) && !isDSNP(c)));
+        setTableHTML('agingPrebatchOverallTable', calculateAging(data, c => isClean(c) && isPrebatch(c)));
+        setTableHTML('agingPrebatchDSNPTable', calculateAging(data, c => isClean(c) && isPrebatch(c) && isDSNP(c)));
+        setTableHTML('agingPrebatchNonDSNPTable', calculateAging(data, c => isClean(c) && isPrebatch(c) && !isDSNP(c)));
+    }
+    
+    function getAgeBucket(age, calcType) {
+        if (isNaN(age) || age < 0) return '0-20';
+        if (age <= 20) return '0-20'; if (age <= 27) return '21-27'; if (age <= 30) return '28-30';
+        if (calcType === 'cms') { if (age <= 59) return '31-59'; return '60+'; }
+        return '31+';
+    }
+
+    function calculateAging(data, filterFunction) {
+        const calcType = document.getElementById('agingCalc').value;
+        const [buckets, pctLabel, pctAge] = calcType === 'cms'
+            ? [['0-20', '21-27', '28-30', '31-59', '60+'], '60+ Percentage', 60]
+            : [['0-20', '21-27', '28-30', '31+'], '31+ Percentage', 31];
+        
+        const results = { 'Par': {}, 'Non Par': {}, 'Grand Total': {} };
+        buckets.forEach(b => { ['Par', 'Non Par', 'Grand Total'].forEach(type => results[type][b] = 0); });
+        
+        const totals = { Par: 0, NonPar: 0, Grand: 0 }, pctTotals = { Par: 0, NonPar: 0, Grand: 0 };
+        
+        data.filter(filterFunction).forEach(claim => {
+            const parNonPar = (claim.networkStatus || '').toLowerCase().includes('in network') ? 'Par' : 'Non Par';
+            const age = parseInt(claim.age), bucket = getAgeBucket(age, calcType);
+            results[parNonPar][bucket]++; results['Grand Total'][bucket]++;
+            if (parNonPar === 'Par') totals.Par++; else totals.NonPar++;
+            totals.Grand++;
+            if (age >= pctAge) { if (parNonPar === 'Par') pctTotals.Par++; else pctTotals.NonPar++; pctTotals.Grand++; }
+        });
+
+        results.Par['Grand Total'] = totals.Par; results['Non Par']['Grand Total'] = totals.NonPar; results['Grand Total']['Grand Total'] = totals.Grand;
+        const fPct = (n, d) => d > 0 ? `${(n/d*100).toFixed(1)}%` : '0.0%';
+        results.Par[pctLabel] = fPct(pctTotals.Par, totals.Par);
+        results['Non Par'][pctLabel] = fPct(pctTotals.NonPar, totals.NonPar);
+        results['Grand Total'][pctLabel] = fPct(pctTotals.Grand, totals.Grand);
+        return results;
+    }
+
+    function createAgingTableHTML(data) {
+        const calcType = document.getElementById('agingCalc').value;
+        const [rowOrder] = calcType === 'cms'
+            ? [['0-20', '21-27', '28-30', '31-59', '60+', '60+ Percentage', 'Grand Total']]
+            : [['0-20', '21-27', '28-30', '31+', '31+ Percentage', 'Grand Total']];
+        
+        let html = '<table class="table aging-table table-sm"><thead><tr><th>Aging</th><th>Par</th><th>Non Par</th><th>Grand Total</th></tr></thead><tbody>';
+        rowOrder.forEach(label => {
+            html += `<tr style="font-weight: ${label === 'Grand Total' ? 'bold' : 'normal'};">
+                <td>${label}</td><td>${data.Par[label] || 0}</td><td>${data['Non Par'][label] || 0}</td><td>${data['Grand Total'][label] || 0}</td>
+            </tr>`;
+        });
+        return html + '</tbody></table>';
+    }
+
+    // --- Work Queue Functions ---
+    function populateCategoryFilter(claims) {
+        const filter = document.getElementById('categoryFilter');
+        const categories = [...new Set(claims.filter(c => c.isActionable).map(c => c.category))];
+        filter.innerHTML = '<option value="all" selected>All Actionable Categories</option>';
+        categories.sort().forEach(cat => {
+            const option = document.createElement('option');
+            option.value = cat;
+            option.textContent = cat;
+            filter.appendChild(option);
+        });
+    }
+
+    function renderWorkQueue(claims) {
+        const selectedCategory = document.getElementById('categoryFilter').value;
+        let actionable = claims.filter(c => c.isActionable);
+        
+        if (selectedCategory !== 'all') {
+            actionable = actionable.filter(c => c.category === selectedCategory);
+        }
+
+        actionable.sort((a, b) => {
+            const valA = a[currentSort.column];
+            const valB = b[currentSort.column];
+            let comp = 0;
+            if (typeof valA === 'number' && typeof valB === 'number') {
+                comp = valA - valB;
+            } else {
+                comp = (valA || '').toString().localeCompare((valB || '').toString());
+            }
+            return currentSort.direction === 'asc' ? comp : -comp;
+        });
+
+        document.getElementById('work-queue-body').innerHTML = actionable.map(claim => `
+            <tr>
+                <td>${claim.priorityScore}</td>
+                <td>${claim.category || 'N/A'}</td>
+                <td>${claim.team || 'N/A'}</td>
+                <td>${claim.claimId || 'N/A'}</td>
+                <td>${claim.age || 0}</td>
+                <td>$${(claim.netPayment || 0).toFixed(2)}</td>
+                <td>${claim.providerName || 'N/A'}</td>
+            </tr>`).join('');
+    }
+
+    async function downloadCategoryReports() {
+        if (!allClaimsData.length) { alert("Please load data first."); return; }
+        
+        const clientName = document.getElementById('clientName').value.trim() || 'Client';
+        const today = new Date();
+        const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        const categories = [...new Set(allClaimsData.filter(c => c.isActionable).map(c => c.category))];
+        if (categories.length === 0) { alert("No actionable categories found to report."); return; }
+
+        for (const category of categories) {
+            const categoryData = allClaimsData.filter(c => c.category === category);
+            
+            // MODIFIED PART: Combine original data with new category data
+            const exportData = categoryData.map(c => ({
+                ...c.original, // This includes all original columns
+                'Priority Score': c.priorityScore,
+                'Assigned Team': c.team,
+                'Category': c.category
+            }));
+            
+            const ws = XLSX.utils.json_to_sheet(exportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Action Items');
+
+            const safeCategoryName = category.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+            const fileName = `${clientName}_${safeCategoryName}_Action_Items_${formattedDate}.xlsx`;
+            
+            XLSX.writeFile(wb, fileName);
+            await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause to allow multiple downloads
+        }
+    }
+
+    // --- Advanced PDF Generation Function ---
+    async function generateStructuredPDF() {
+        if (!aggregatedMetrics.totalClaims) { alert("Please load data first."); return; }
+
+        const clientName = document.getElementById('clientName').value.trim() || 'Client';
+        const today = new Date();
+        const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        
+        const pdfTitle = `${clientName} Daily Summary Report ${formattedDate}`;
+        const fileName = `${clientName.replace(/ /g, '_')}_Daily_Summary_Report_${formattedDate}.pdf`;
+
+        const { jsPDF } = window.jspdf;
+        const pdf = new jsPDF('p', 'pt', 'a4');
+        const margin = 40, pageHeight = pdf.internal.pageSize.getHeight();
+        let currentHeight = margin;
+
+        const logoImg = document.getElementById('logoImage');
+        try {
+            const logoCanvas = await html2canvas(logoImg, { backgroundColor: null });
+            const logoImgData = logoCanvas.toDataURL('image/png');
+            pdf.addImage(logoImgData, 'PNG', margin, currentHeight, 84, 24);
+        } catch (e) {
+            console.error("Error rendering logo for PDF:", e);
+            pdf.setFont('helvetica', 'normal');
+            pdf.setFontSize(10);
+            pdf.text("Logo Error", margin, currentHeight + 12);
+        }
+        currentHeight += 40;
+
+        const addMainTitle = (title) => {
+            pdf.setFont('helvetica', 'bold'); pdf.setFontSize(22);
+            pdf.text(title, pdf.internal.pageSize.getWidth() / 2, currentHeight, { align: 'center', maxWidth: pdf.internal.pageSize.getWidth() - margin * 2 });
+            currentHeight += 40;
+        };
+
+        const addSectionHeader = (title) => {
+            if (currentHeight + 40 > pageHeight - margin) { pdf.addPage(); currentHeight = margin; }
+            pdf.setFont('helvetica', 'bold'); pdf.setFontSize(16);
+            pdf.text(title, margin, currentHeight);
+            currentHeight += 25;
+        };
+
+        const addTableToPdf = (title, tableConfig) => {
+            if (tableConfig.html) { const el = document.querySelector(tableConfig.html); if (el && el.parentElement.style.display === 'none') return; }
+            let rowCount = tableConfig.body ? tableConfig.body.length : (document.querySelector(tableConfig.html)?.querySelectorAll('tr').length || 0);
+            const estHeight = 45 + (rowCount * 15);
+            if (currentHeight + estHeight > pageHeight - margin) { pdf.addPage(); currentHeight = margin; }
+            pdf.setFont('helvetica', 'bold'); pdf.setFontSize(14);
+            pdf.text(title, margin, currentHeight);
+            pdf.autoTable({ ...tableConfig, startY: currentHeight + 15, theme: 'grid', headStyles: { fillColor: [70, 90, 108] } });
+            currentHeight = pdf.autoTable.previous.finalY + 25;
+        };
+        
+        addMainTitle(pdfTitle);
+        addSectionHeader('Executive Summary');
+        const canvas = await html2canvas(document.getElementById('executive-summary-section'));
+        const imgWidth = pdf.internal.pageSize.getWidth() - margin * 2;
+        const imgHeight = canvas.height * imgWidth / canvas.width;
+        if (currentHeight + imgHeight > pageHeight - margin) { pdf.addPage(); currentHeight = margin; }
+        pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, currentHeight, imgWidth, imgHeight);
+        
+        pdf.addPage(); currentHeight = margin;
+        addSectionHeader('Workflow & Root Cause Analysis');
+        
+        const toTableData = (obj) => Object.entries(obj).map(([k,v]) => [k,v]);
+        const toTop10Data = (top10) => top10.labels.map((l, i) => [l, top10.data[i]]);
+
+        addTableToPdf('Claims by Final Status', { head: [['Status', 'Count']], body: toTableData(aggregatedMetrics.claimsByStatus) });
+        addTableToPdf('Claims by Workflow State', { head: [['State', 'Count']], body: toTableData(aggregatedMetrics.claimsByState) });
+        addTableToPdf('Top 10 Claim Edits', { head: [['Edit', 'Count']], body: toTop10Data(aggregatedMetrics.topEdits) });
+        addTableToPdf('Top 10 Providers (Overall)', { head: [['Provider', 'Count']], body: toTop10Data(aggregatedMetrics.topProvidersOverall) });
+        addTableToPdf('Top 10 Providers (On Hold)', { head: [['Provider', 'Count']], body: toTop10Data(aggregatedMetrics.topProvidersOnHold) });
+        addTableToPdf('Top 10 Providers (Management Review)', { head: [['Provider', 'Count']], body: toTop10Data(aggregatedMetrics.topProvidersMgmtReview) });
+        
+        pdf.addPage(); currentHeight = margin;
+        addSectionHeader('Aging Analysis');
+        addTableToPdf('Combined Counts (Overall)', { html: '#agingCombinedOverallTable .table' });
+        addTableToPdf('Active Counts (Overall)', { html: '#agingActiveOverallTable .table' });
+        addTableToPdf('Prebatch Counts (Overall)', { html: '#agingPrebatchOverallTable .table' });
+
+        pdf.save(fileName);
+    }
+    </script>
+</body>
+</html>
