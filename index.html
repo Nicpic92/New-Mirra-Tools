@@ -56,29 +56,29 @@
         </div>
 
         <div id="dashboardContent">
-            <!-- OPTIONS -->
+            <!-- NEW DYNAMIC OPTIONS SECTION -->
             <div class="pdf-options card p-3 mb-4">
                 <h5 class="card-title fw-bold">2. Report Options</h5>
-                <div class="row">
+                <div class="row align-items-end">
                     <div class="col-md-4 mb-3">
-                        <label for="clientName" class="form-label small fw-bold">Client Name</label>
-                        <input type="text" class="form-control form-control-sm" id="clientName" placeholder="Enter client name">
-                    </div>
-                    <div class="col-md-4 mb-3">
-                        <label for="agingCalc" class="form-label small fw-bold">Aging Calculation Basis</label>
-                        <select class="form-select form-select-sm" id="agingCalc">
-                            <option value="legacy">31+ (Legacy/30-Day)</option>
-                            <option value="cms" selected>31-59 / 60+ (CMS/60-Day)</option>
+                        <label for="configSelector" class="form-label small fw-bold">Select Report Configuration</label>
+                        <select class="form-select form-select-sm" id="configSelector">
+                            <option value="">Loading configurations...</option>
                         </select>
                     </div>
                     <div class="col-md-4 mb-3">
-                        <label class="form-label small fw-bold d-block">&nbsp;</label>
-                        <button class="btn btn-dark w-100" id="generatePdfBtn">Download Detailed Report as PDF</button>
+                        <label for="clientName" class="form-label small fw-bold">Client Name</label>
+                        <input type="text" class="form-control form-control-sm" id="clientName" placeholder="Select a configuration" readonly>
                     </div>
-                    <!-- NEW BUTTON FOR SAVING CONFIGURATION -->
-                    <div class="col-12 mt-2">
-                        <button class="btn btn-primary" id="saveConfigBtn">Save Report Configuration</button>
-                        <small class="text-muted ms-2">Saves settings like Client Name and Aging Basis.</small>
+                    <div class="col-md-4 mb-3">
+                        <label for="agingCalc" class="form-label small fw-bold">Aging Calculation Basis</label>
+                        <select class="form-select form-select-sm" id="agingCalc" disabled>
+                            <option value="legacy">31+ (Legacy/30-Day)</option>
+                            <option value="cms">31-59 / 60+ (CMS/60-Day)</option>
+                        </select>
+                    </div>
+                    <div class="col-12 text-end">
+                        <button class="btn btn-dark w-100" id="generatePdfBtn">Download Detailed Report as PDF</button>
                     </div>
                 </div>
             </div>
@@ -140,7 +140,7 @@
                             <div class="col-12"><h4 class="aging-table-header">Prebatch Counts Analysis</h4></div>
                             <div class="col-lg-4 aging-table-container"><h6>Prebatch Counts (Overall)</h6><p class="text-muted small m-0">Filters: Clean Claims, Overall Only, Prebatch Only</p><div id="agingPrebatchOverallTable"></div></div>
                             <div class="col-lg-4 aging-table-container"><h6>Prebatch Counts (DSNP)</h6><p class="text-muted small m-0">Filters: Clean Claims, DSNP Only, Prebatch Only</p><div id="agingPrebatchDSNPTable"></div></div>
-                            <div class="col-lg-4 aging-table-container"><h6>Prebatch Counts (Non DSNP)</h6><p class="text-muted small m-0">Filters: Clean Claims, Non DSNP Only, Prebatch Only</p><div id="agingPrebatchNonDSNPTable"></div></div>
+                            <div class="col-lg-4 aging-table-container"><h6>Prebatch Counts (Non DSNP)</h6><p class="text-muted small m-0">Filters: Clean Claims, Non DSNP Only, Prebatch Only</p<div id="agingPrebatchNonDSNPTable"></div></div>
                         </div>
                     </div>
                 </div>
@@ -204,64 +204,62 @@
         return undefined;
     };
 
-    // --- NEW FUNCTIONS FOR SAVING AND LOADING CONFIGURATION ---
+    // --- NEW DYNAMIC CONFIGURATION LOGIC ---
+    const configSelector = document.getElementById('configSelector');
+    const clientNameInput = document.getElementById('clientName');
+    const agingCalcInput = document.getElementById('agingCalc');
+    let allConfigs = []; // Store all config objects to access their data
 
-    async function saveConfiguration() {
-        console.log("Attempting to save configuration...");
-        // Gather the current values from the UI elements you want to save
-        const configToSave = {
-            clientName: document.getElementById('clientName').value,
-            agingCalc: document.getElementById('agingCalc').value,
-            // Add any other configurations you want to save in the future
-            // For example: lastUsedTab: document.querySelector('.nav-link.active').id
-        };
-
+    // Load all configuration names into the dropdown
+    async function populateConfigSelector() {
         try {
-            const response = await fetch('/.netlify/functions/save-config', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(configToSave)
-            });
-            if (!response.ok) {
-                throw new Error(`Failed to save configuration. Server responded with ${response.status}`);
-            }
-            const result = await response.json();
-            alert(result.message); // e.g., "Configuration saved successfully!"
-            console.log("Configuration saved:", configToSave);
-        } catch (error) {
-            console.error('Error during saveConfiguration:', error);
-            alert('Could not save configuration. See console for details.');
-        }
-    }
-
-    async function loadConfiguration() {
-        console.log("Attempting to load configuration...");
-        try {
-            const response = await fetch('/.netlify/functions/get-config');
-            if (!response.ok) {
-                throw new Error(`Failed to load configuration. Server responded with ${response.status}`);
-            }
-            const config = await response.json();
+            const response = await fetch('/.netlify/functions/configurations');
+            if (!response.ok) throw new Error('Failed to fetch configurations');
+            const configs = await response.json();
             
-            // Check if the loaded config has data before applying it
-            if (config && Object.keys(config).length > 0) {
-                // Apply the loaded configuration to your UI elements
-                if (config.clientName) {
-                    document.getElementById('clientName').value = config.clientName;
-                }
-                if (config.agingCalc) {
-                    document.getElementById('agingCalc').value = config.agingCalc;
-                }
-                console.log("Configuration successfully loaded and applied:", config);
-            } else {
-                console.log("No saved configuration found or configuration is empty.");
+            allConfigs = configs; // Save the full config objects
+            
+            // Clear previous options
+            configSelector.innerHTML = '<option value="">Load a saved configuration...</option>';
+            
+            if (configs.length === 0) {
+                 configSelector.innerHTML = '<option value="">No configurations found</option>';
             }
 
+            configs.forEach(config => {
+                const option = document.createElement('option');
+                option.value = config.id;
+                option.textContent = config.config_name;
+                configSelector.appendChild(option);
+            });
+
         } catch (error) {
-            console.error('Error during loadConfiguration:', error);
-            // It's okay to fail silently here, as there might not be a saved config yet.
+            console.error('Error populating configurations:', error);
+            configSelector.innerHTML = '<option value="">Error loading configs</option>';
         }
     }
+
+    // When a user selects a configuration, apply its settings
+    configSelector.addEventListener('change', (e) => {
+        // Find the full config object from our stored array
+        const selectedId = parseInt(e.target.value, 10);
+        const selectedConfig = allConfigs.find(c => c.id === selectedId);
+        
+        if (selectedConfig && selectedConfig.config_data) {
+            clientNameInput.value = selectedConfig.config_data.clientName || '';
+            agingCalcInput.value = selectedConfig.config_data.agingCalc || 'cms';
+            
+            // Also trigger a re-render of the aging tables if data is loaded
+             if (allClaimsData.length > 0) {
+                renderAgingTables(allClaimsData);
+            }
+
+        } else {
+            // Reset if they select the default "Load a..." option
+            clientNameInput.value = '';
+            agingCalcInput.value = 'cms';
+        }
+    });
 
 
     // --- Event Listeners ---
@@ -282,11 +280,8 @@
         document.getElementById('categoryFilter').addEventListener('change', () => renderWorkQueue(allClaimsData));
         document.getElementById('downloadCategoryReportsBtn').addEventListener('click', downloadCategoryReports);
         
-        // --- NEW EVENT LISTENER FOR THE SAVE BUTTON ---
-        document.getElementById('saveConfigBtn').addEventListener('click', saveConfiguration);
-
-        // --- LOAD CONFIGURATION ON PAGE LOAD ---
-        loadConfiguration();
+        // Load configurations into the dropdown when the page loads
+        populateConfigSelector();
     });
 
     // --- Main file handling and processing logic ---
@@ -629,6 +624,11 @@
         if (!aggregatedMetrics.totalClaims) { alert("Please load data first."); return; }
 
         const clientName = document.getElementById('clientName').value.trim() || 'Client';
+        if (!clientName) {
+            alert("Please select a report configuration to set a client name before generating a PDF.");
+            return;
+        }
+        
         const today = new Date();
         const formattedDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
         
