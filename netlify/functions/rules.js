@@ -1,0 +1,64 @@
+// This function handles saving the rules that map edits/notes to categories.
+const { Pool } = require('pg');
+
+const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
+
+exports.handler = async function(event) {
+    const db = getDb();
+    const { type } = event.queryStringParameters; // Expects 'edit' or 'note'
+
+    if (!['edit', 'note'].includes(type)) {
+        return { statusCode: 400, body: 'Invalid rule type specified.' };
+    }
+
+    const tableName = type === 'edit' ? 'claim_edit_rules' : 'claim_note_rules';
+    const textField = type === 'edit' ? 'edit_text' : 'note_keyword';
+
+    try {
+        switch (event.httpMethod) {
+            case 'GET': {
+                const sql = `SELECT ${textField} as text, category_id FROM ${tableName};`;
+                const result = await db.query(sql);
+                return { statusCode: 200, body: JSON.stringify(result.rows) };
+            }
+            case 'POST': {
+                // This function performs a batch "upsert" (insert or update).
+                const rules = JSON.parse(event.body);
+                if (!Array.isArray(rules) || rules.length === 0) {
+                    return { statusCode: 400, body: 'Request body must be a non-empty array.' };
+                }
+
+                const client = await db.connect();
+                try {
+                    await client.query('BEGIN');
+                    const sql = `
+                        INSERT INTO ${tableName} (${textField}, category_id)
+                        VALUES ($1, $2)
+                        ON CONFLICT (${textField})
+                        DO UPDATE SET category_id = EXCLUDED.category_id, last_seen = CURRENT_TIMESTAMP;
+                    `;
+                    for (const rule of rules) {
+                        if (rule.text && rule.category_id) {
+                            await client.query(sql, [rule.text, rule.category_id]);
+                        }
+                    }
+                    await client.query('COMMIT');
+                } catch (e) {
+                    await client.query('ROLLBACK');
+                    throw e; // This will be caught by the outer catch block
+                } finally {
+                    client.release();
+                }
+
+                return { statusCode: 201, body: JSON.stringify({ message: 'Rules saved.' }) };
+            }
+            default:
+                return { statusCode: 405, body: 'Method Not Allowed' };
+        }
+    } catch (error) {
+        console.error('Database error:', error);
+        return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
+    } finally {
+        await db.end();
+    }
+};
