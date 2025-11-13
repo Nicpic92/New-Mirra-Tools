@@ -18,18 +18,9 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
     <style>
-        :root {
-            --primary-color: #0d6efd;
-            --secondary-color: #f8f9fa;
-        }
+        :root { --primary-color: #0d6efd; --secondary-color: #f8f9fa; }
         body { background-color: white; font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", "Liberation Sans", Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji"; }
-        .dashboard-card { 
-            border-radius: 0.375rem; 
-            box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); 
-            border: 1px solid #dee2e6;
-            border-left-width: 4px;
-            padding: 1.25rem;
-        }
+        .dashboard-card { border-radius: 0.375rem; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); border: 1px solid #dee2e6; border-left-width: 4px; padding: 1.25rem; }
         .metric-value { font-size: 2.25rem; font-weight: 700; color: #212529; }
         .metric-label { font-size: 0.8rem; font-weight: 600; text-transform: uppercase; }
         .chart-container { min-height: 380px; background-color: white; padding: 20px; border-radius: 0.5rem; box-shadow: 0 0.125rem 0.25rem rgba(0,0,0,.075); }
@@ -292,6 +283,7 @@
 
         function analyzeAndProcessClaims(data) {
             const metrics = { totalClaims: 0, totalNetPayment: 0, claimsPend: 0, claimsDenied: 0, claimsByStatus: {}, claimsByState: {}, claimsByNetwork: {}, claimsByEdit: {}, providerCounts: { overall: {}, onhold: {}, mgmtreview: {} }};
+            
             const claims = data.map(rawClaim => {
                 const processedClaim = {
                     state: (getVal(rawClaim, 'state') || 'UNKNOWN').toString().toUpperCase().trim(),
@@ -334,46 +326,49 @@
                 }
                 return processedClaim;
             });
-
-            // Process Custom Widgets
-            const selectedConfigId = parseInt(document.getElementById('configSelector').value, 10);
-            const config = allConfigs.find(c => c.id === selectedConfigId);
-            if (config?.config_data?.pdfConfig?.customWidgets) {
-                config.config_data.pdfConfig.customWidgets.forEach(widget => {
-                    const aggregation = data.reduce((acc, rawClaim) => {
-                        const groupKey = getVal(rawClaim, widget.groupBy) || 'Unspecified';
-                        if (!acc[groupKey]) {
-                            acc[groupKey] = { count: 0, sum: 0 };
-                        }
-                        acc[groupKey].count++;
-                        if (widget.metricType === 'sum') {
-                            const val = parseFloat(getVal(rawClaim, widget.metricColumn) || 0);
-                            if (!isNaN(val)) {
-                                acc[groupKey].sum += val;
-                            }
-                        }
-                        return acc;
-                    }, {});
-
-                    const metricData = Object.entries(aggregation)
-                        .map(([label, values]) => ({
-                            label: label,
-                            data: widget.metricType === 'sum' ? values.sum : values.count
-                        }))
-                        .sort((a, b) => b.data - a.data); // Sort descending
-
-                    metrics[widget.id] = {
-                        labels: metricData.map(d => d.label),
-                        data: metricData.map(d => d.data)
-                    };
-                });
-            }
-
+            
             const getTop10 = (counts, filterKey = null) => Object.entries(counts).filter(([k]) => k !== filterKey).sort(([, a], [, b]) => b - a).slice(0, 10).reduce((acc, [l, d]) => (acc.labels.push(l), acc.data.push(d), acc), { labels: [], data: [] });
             metrics.topEdits = getTop10(metrics.claimsByEdit, 'No Edits');
             metrics.topProvidersOverall = getTop10(metrics.providerCounts.overall);
             metrics.topProvidersOnHold = getTop10(metrics.providerCounts.onhold);
             metrics.topProvidersMgmtReview = getTop10(metrics.providerCounts.mgmtreview);
+
+            // --- DYNAMICALLY PROCESS CUSTOM WIDGETS ---
+            const selectedConfigId = parseInt(document.getElementById('configSelector').value, 10);
+            const config = allConfigs.find(c => c.id === selectedConfigId);
+            const customWidgets = config?.config_data?.pdfConfig?.customWidgets || [];
+
+            customWidgets.forEach(widget => {
+                if (!widget.groupBy) return;
+                const aggregation = data.reduce((acc, rawClaim) => {
+                    const key = getVal(rawClaim, widget.groupBy) || 'Unspecified';
+                    if (!acc[key]) {
+                        acc[key] = (widget.metricType === 'count') ? 0 : { sum: 0, count: 0 };
+                    }
+                    if (widget.metricType === 'count') {
+                        acc[key]++;
+                    } else if (widget.metricType === 'sum' && widget.metricColumn) {
+                        const value = parseFloat(getVal(rawClaim, widget.metricColumn) || 0);
+                        if (!isNaN(value)) {
+                            acc[key].sum += value;
+                            acc[key].count++;
+                        }
+                    }
+                    return acc;
+                }, {});
+                
+                const sorted = Object.entries(aggregation).sort(([, a], [, b]) => {
+                    const valA = (widget.metricType === 'count') ? a : a.sum;
+                    const valB = (widget.metricType === 'count') ? b : b.sum;
+                    return valB - valA;
+                });
+
+                metrics[widget.id] = {
+                    labels: sorted.map(item => item[0]),
+                    data: sorted.map(item => (widget.metricType === 'count') ? item[1] : item[1].sum)
+                };
+            });
+
             return { claims, metrics };
         }
         
@@ -483,10 +478,7 @@
                 let ws;
 
                 switch (categoryName) {
-                    case 'Contract Issues':
-                    case 'Pay To':
-                    case 'W9 Research':
-                    case 'SEQ_TFL': {
+                    case 'Contract Issues': case 'Pay To': case 'W9 Research': case 'SEQ_TFL': {
                         const providerMap = new Map();
                         claimsInCat.forEach(claim => {
                             const providerName = getVal(claim.original, 'providerName') || 'Unknown';
@@ -494,22 +486,13 @@
                             const networkStatus = getVal(claim.original, 'networkStatus') || 'Unknown';
                             const key = `${providerName}|${providerTin}|${networkStatus}`;
                             if (!providerMap.has(key)) {
-                                providerMap.set(key, {
-                                    'Billing Provider Name': providerName,
-                                    'Billing Provider Tax ID': providerTin,
-                                    'Network Status': networkStatus,
-                                    'Count of Claims': 0
-                                });
+                                providerMap.set(key, { 'Billing Provider Name': providerName, 'Billing Provider Tax ID': providerTin, 'Network Status': networkStatus, 'Count of Claims': 0 });
                             }
                             providerMap.get(key)['Count of Claims']++;
                         });
                         reportData = Array.from(providerMap.values());
                         reportData.sort((a, b) => b['Count of Claims'] - a['Count of Claims']);
-                        reportData.forEach(row => {
-                            row['Prov Ops Team Mbr'] = '';
-                            row['PV Updated (Y/N)'] = '';
-                            row['Notes'] = '';
-                        });
+                        reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
                         ws = XLSX.utils.json_to_sheet(reportData);
                         break;
                     }
@@ -523,36 +506,18 @@
                             const networkStatus = getVal(claim.original, 'networkStatus') || 'Unknown';
                             const key = `${renderingName}|${renderingNpi}|${billingTin}|${networkStatus}`;
                             if (!renderingMap.has(key)) {
-                                renderingMap.set(key, {
-                                    'Rendering Provider Name': renderingName,
-                                    'Rendering Provider NPI': renderingNpi,
-                                    'Billing Provider TIN': billingTin,
-                                    'Network Status': networkStatus
-                                });
+                                renderingMap.set(key, { 'Rendering Provider Name': renderingName, 'Rendering Provider NPI': renderingNpi, 'Billing Provider TIN': billingTin, 'Network Status': networkStatus });
                             }
                         });
                         reportData = Array.from(renderingMap.values());
                         reportData.sort((a, b) => a['Rendering Provider Name'].localeCompare(b['Rendering Provider Name']));
-                        reportData.forEach(row => {
-                            row['Prov Ops Team Mbr'] = '';
-                            row['PV Updated (Y/N)'] = '';
-                            row['Notes'] = '';
-                        });
+                        reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
                          ws = XLSX.utils.json_to_sheet(reportData);
                         break;
                     }
 
                     default: {
-                        reportData = claimsInCat.map(claim => ({
-                            ...claim.original,
-                            'Priority Score': claim.priorityScore,
-                            'Assigned Team': claim.teamName,
-                            'Category': claim.category,
-                            'Categorization Source': claim.source,
-                            'Prov Ops Team Mbr': '',
-                            'PV Updated (Y/N)': '',
-                            'Notes': ''
-                        }));
+                        reportData = claimsInCat.map(claim => ({ ...claim.original, 'Priority Score': claim.priorityScore, 'Assigned Team': claim.teamName, 'Category': claim.category, 'Categorization Source': claim.source, 'Prov Ops Team Mbr': '', 'PV Updated (Y/N)': '', 'Notes': '' }));
                         ws = XLSX.utils.json_to_sheet(reportData);
                         break;
                     }
@@ -570,7 +535,6 @@
         
         async function generateStructuredPDF() {
             if (!aggregatedMetrics.totalClaims) { alert("Please load data first."); return; }
-            
             const clientName = document.getElementById('clientName').value.trim();
             const selectedConfigId = parseInt(document.getElementById('configSelector').value, 10);
             const config = allConfigs.find(c => c.id === selectedConfigId);
@@ -651,15 +615,22 @@
                     }
                     case 'table':
                     case 'custom_table': {
-                        const widgetDefinition = section.type === 'table' 
-                            ? { columns: [{ header: 'Label', dataKey: 'label' }, { header: 'Value', dataKey: 'data' }] } // fallback
-                            : section.definition;
-
                         const tableData = prepareTableData(section.id);
+                        const definition = section.type === 'table' 
+                            ? { columns: [{header: 'Label', dataKey: 'label'}, {header: 'Value', dataKey: 'data'}]} // Fallback for old standard tables
+                            : section.definition;
                         
-                        if (tableData.length > 0 && widgetDefinition.columns) {
-                            const head = [widgetDefinition.columns.map(c => c.header)];
-                            const body = tableData.map(row => widgetDefinition.columns.map(col => row[col.dataKey]));
+                        // Use columns from the definition
+                        const columns = definition?.columns;
+                        if (columns && tableData.length > 0) {
+                            const head = [columns.map(c => c.header)];
+                            const body = tableData.map(row => columns.map(col => {
+                                let val = row[col.dataKey];
+                                if (typeof val === 'number' && definition.metricType === 'sum') {
+                                    return val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+                                }
+                                return val;
+                            }));
                             
                             pdf.autoTable({
                                 startY: currentY,
@@ -667,9 +638,6 @@
                                 body: body,
                                 theme: 'striped',
                                 headStyles: { fillColor: [70, 90, 108] },
-                                didDrawPage: (data) => {
-                                    currentY = data.cursor.y; // Update Y for new pages
-                                }
                             });
                             currentY = pdf.previousAutoTable.finalY + 20;
                         } else {
