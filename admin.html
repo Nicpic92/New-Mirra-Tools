@@ -16,20 +16,19 @@
             <a href="/" class="btn btn-outline-primary">Go to Dashboard</a>
         </div>
         
-        <!-- Existing Configuration Management -->
+        <!-- Client Configuration Management -->
         <div class="row g-5">
-            <!-- Form to add or edit a configuration -->
             <div class="col-md-7">
                 <div class="card">
                     <div class="card-body">
                         <h2 id="formTitle">Add/Edit Client Configuration</h2>
-                        <p class="text-muted">Manage the saved settings for individual clients, including their specific column mappings.</p>
+                        <p class="text-muted">Manage settings for individual clients and their column mappings.</p>
                         <form id="configForm">
                             <input type="hidden" id="configId">
                             <h5>Step 1: Basic Information</h5>
                             <div class="mb-3">
                                 <label for="configName" class="form-label">Configuration Name</label>
-                                <input type="text" class="form-control" id="configName" placeholder="e.g., Q1 Report, High-Risk Providers" required>
+                                <input type="text" class="form-control" id="configName" placeholder="e.g., Client A Report" required>
                             </div>
                             <div class="mb-3">
                                 <label for="clientName" class="form-label">Client Name (for PDF Reports)</label>
@@ -45,10 +44,7 @@
                                 <h6>Map Your Fields to Detected Headers:</h6>
                                 <table class="table table-bordered table-sm mapping-table">
                                     <thead class="table-light">
-                                        <tr>
-                                            <th>Standard Field</th>
-                                            <th>Client's Column Header</th>
-                                        </tr>
+                                        <tr><th>Standard Field</th><th>Client's Column Header</th></tr>
                                     </thead>
                                     <tbody id="mappingTableBody"></tbody>
                                 </table>
@@ -60,20 +56,19 @@
                     </div>
                 </div>
             </div>
-            <!-- List of existing configurations -->
             <div class="col-md-5">
                 <h2>Existing Configurations</h2>
                 <ul class="list-group" id="configList"></ul>
             </div>
         </div>
 
-        <!-- NEW SECTION FOR CATEGORIZATION RULES -->
+        <!-- Global Categorization Rules Section -->
         <div class="row g-5 mt-4">
             <div class="col-12">
                 <div class="card">
                     <div class="card-body">
                         <h2 id="categorizationTitle">Global Categorization Rules</h2>
-                        <p class="text-muted">Configure how claim edits and note keywords are categorized. These rules are global and apply to all clients. Upload a report to discover new, uncategorized items.</p>
+                        <p class="text-muted">Configure how claim edits are categorized. These rules are global and apply to all clients.</p>
 
                         <div class="row">
                             <div class="col-md-6 mb-3">
@@ -83,8 +78,8 @@
                                 </select>
                             </div>
                             <div class="col-md-6 mb-3">
-                                <label for="categorizationReportUploader" class="form-label fw-bold">2. Upload Report to Find New Rules</label>
-                                <input class="form-control" type="file" id="categorizationReportUploader" accept=".xlsx, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" disabled>
+                                <label for="categorizationReportUploader" class="form-label fw-bold">2. Upload Report to Find New Edits</label>
+                                <input class="form-control" type="file" id="categorizationReportUploader" accept=".xlsx" disabled>
                             </div>
                         </div>
                         <hr>
@@ -98,22 +93,14 @@
                                 </form>
                             </div>
                             <div class="col-md-8">
-                                <h5>Assign Rules</h5>
-                                <p class="small">Newly detected, uncategorized claim edits and note keywords from your upload will appear here. Assign them to a category.</p>
+                                <h5>Assign Rules for Uncategorized Claim Edits</h5>
+                                <p class="small">Newly detected claim edits from your upload will appear here. Assign them to a category to create a rule.</p>
                                 
                                 <div id="rulesAssignmentContainer" style="display: none;">
-                                    <h6>Uncategorized Claim Edits</h6>
                                     <table class="table table-sm table-bordered">
-                                        <thead class="table-light"><tr><th>Edit Text</th><th>Assign to Category</th></tr></thead>
+                                        <thead class="table-light"><tr><th>Edit Text (Alphabetical)</th><th>Assign to Category</th></tr></thead>
                                         <tbody id="uncategorizedEditsTable"></tbody>
                                     </table>
-                                    
-                                    <h6 class="mt-4">Uncategorized Note Keywords</h6>
-                                    <table class="table table-sm table-bordered">
-                                       <thead class="table-light"><tr><th>Note Keyword</th><th>Assign to Category</th></tr></thead>
-                                       <tbody id="uncategorizedNotesTable"></tbody>
-                                    </table>
-
                                     <button id="saveCategorizationRulesBtn" class="btn btn-success mt-3">Save All Assignments</button>
                                 </div>
                                 <div id="noRulesFound" class="alert alert-info">Upload a file to begin.</div>
@@ -127,7 +114,7 @@
 
 <script>
 document.addEventListener('DOMContentLoaded', () => {
-    // --- START: ORIGINAL CLIENT CONFIGURATION SCRIPT ---
+    // --- START: CLIENT CONFIGURATION SCRIPT (Largely Unchanged) ---
     const configForm = document.getElementById('configForm');
     const formTitle = document.getElementById('formTitle');
     const configIdInput = document.getElementById('configId');
@@ -149,9 +136,12 @@ document.addEventListener('DOMContentLoaded', () => {
         { key: 'networkStatus',  displayName: 'Network Status',       required: true },
         { key: 'providerName',   displayName: 'Billing Provider Name',required: true },
         { key: 'dsnp',           displayName: 'DSNP Status',          required: false },
-        { key: 'edit',           displayName: 'Claim Edits',          required: true }, // Made required for categorization
-        { key: 'notes',          displayName: 'Claim Notes',          required: true }, // Made required for categorization
+        { key: 'edit',           displayName: 'Claim Edits',          required: true },
+        { key: 'notes',          displayName: 'Claim Notes',          required: true },
     ];
+    // This section remains the same as before...
+    // (Functions: reportUploader listener, renderMappingUI, loadConfigurations, configForm listener, deleteConfig, clearForm)
+    // --- END: CLIENT CONFIGURATION SCRIPT ---
     reportUploader.addEventListener('change', (event) => {
         const file = event.target.files[0];
         if (!file) return;
@@ -164,7 +154,6 @@ document.addEventListener('DOMContentLoaded', () => {
         };
         reader.readAsArrayBuffer(file);
     });
-
     function renderMappingUI() {
         mappingTableBody.innerHTML = '';
         standardFields.forEach(field => {
@@ -181,18 +170,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         mappingSection.style.display = 'block';
     }
-
     async function loadConfigurations() {
         try {
             const response = await fetch(API_ENDPOINT);
             const configs = await response.json();
             configList.innerHTML = configs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
-            
-            // Also populate the selector in the categorization section
             const categorizationSelector = document.getElementById('categorizationConfigSelector');
             categorizationSelector.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
-            window.allClientConfigs = configs; // Make available globally for categorization script
-
+            window.allClientConfigs = configs;
             configs.forEach(config => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
@@ -203,21 +188,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 deleteBtn.onclick = () => deleteConfig(config.id);
                 li.appendChild(deleteBtn);
                 configList.appendChild(li);
-
                 categorizationSelector.add(new Option(config.config_name, config.id));
             });
         } catch (error) {
             console.error('Error loading configurations:', error);
         }
     }
-
     configForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const columnMappings = {};
         mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) { columnMappings[sel.dataset.standardKey] = sel.value; } });
         const id = configIdInput.value;
         const config_name = configNameInput.value;
-        // Note: The 'agingCalc' input was removed from the HTML for simplicity, but if you re-add it, include it here.
         const config_data = { clientName: clientNameInput.value, columnMappings };
         const method = id ? 'PUT' : 'POST';
         const url = id ? `${API_ENDPOINT}?id=${id}` : API_ENDPOINT;
@@ -232,7 +214,6 @@ document.addEventListener('DOMContentLoaded', () => {
             alert('Failed to save configuration.');
         }
     });
-
     async function deleteConfig(id) {
         if (!confirm('Are you sure?')) return;
         try {
@@ -244,34 +225,28 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Error deleting:', error);
         }
     }
-    
     function clearForm() {
         configForm.reset();
         configIdInput.value = '';
         formTitle.textContent = 'Add New Configuration';
         mappingSection.style.display = 'none';
     }
-    
     clearBtn.addEventListener('click', clearForm);
     loadConfigurations();
-    // --- END: ORIGINAL CLIENT CONFIGURATION SCRIPT ---
 
-
-    // --- START: NEW CATEGORIZATION UI SCRIPT ---
+    // --- START: CATEGORIZATION UI SCRIPT (Updated) ---
     const categorizationConfigSelector = document.getElementById('categorizationConfigSelector');
     const categorizationReportUploader = document.getElementById('categorizationReportUploader');
     const categoryList = document.getElementById('categoryList');
     const newCategoryForm = document.getElementById('newCategoryForm');
     const newCategoryNameInput = document.getElementById('newCategoryName');
     const uncategorizedEditsTable = document.getElementById('uncategorizedEditsTable');
-    const uncategorizedNotesTable = document.getElementById('uncategorizedNotesTable');
     const saveCategorizationRulesBtn = document.getElementById('saveCategorizationRulesBtn');
     const rulesAssignmentContainer = document.getElementById('rulesAssignmentContainer');
     const noRulesFoundDiv = document.getElementById('noRulesFound');
     
     let allCategories = [];
     let existingEditRules = new Map();
-    let existingNoteRules = new Map();
     let columnMappingsForCategorization = {};
     const CATEGORIES_API = '/.netlify/functions/categories';
     const RULES_API = '/.netlify/functions/rules';
@@ -281,24 +256,15 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(CATEGORIES_API);
             allCategories = await response.json();
             renderCategoryList();
-        } catch (error) {
-            console.error("Failed to load categories:", error);
-        }
+        } catch (error) { console.error("Failed to load categories:", error); }
     }
 
     async function loadRules() {
         try {
-            const [editRes, noteRes] = await Promise.all([
-                fetch(`${RULES_API}?type=edit`),
-                fetch(`${RULES_API}?type=note`)
-            ]);
-            const edits = await editRes.json();
-            const notes = await noteRes.json();
+            const response = await fetch(RULES_API); // No longer needs '?type=edit'
+            const edits = await response.json();
             existingEditRules = new Map(edits.map(rule => [rule.text, rule.category_id]));
-            existingNoteRules = new Map(notes.map(rule => [rule.text, rule.category_id]));
-        } catch (error) {
-            console.error("Failed to load existing rules:", error);
-        }
+        } catch (error) { console.error("Failed to load existing rules:", error); }
     }
 
     function renderCategoryList() {
@@ -332,7 +298,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (columnMappingsForCategorization.edit && columnMappingsForCategorization.notes) {
                 categorizationReportUploader.disabled = false;
             } else {
-                alert('This configuration is missing mappings for "Claim Edits" or "Claim Notes".');
+                alert('This configuration is missing a mapping for "Claim Edits".');
                 categorizationReportUploader.disabled = true;
             }
         }
@@ -352,43 +318,29 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function processUploadedReport(data) {
         const detectedEdits = new Set();
-        const detectedNoteKeywords = new Set();
         const editColumn = columnMappingsForCategorization.edit;
-        const notesColumn = columnMappingsForCategorization.notes;
 
         data.forEach(row => {
             const editValue = row[editColumn];
             if (editValue && !existingEditRules.has(editValue)) {
                 detectedEdits.add(editValue);
             }
-            const noteValue = (row[notesColumn] || '').toLowerCase();
-            // A simple keyword extractor - splits by non-alphanumeric characters
-            noteValue.split(/[^a-z0-9]+/).forEach(word => {
-                // Filter out common/short words
-                if (word.length > 3 && !existingNoteRules.has(word)) {
-                     detectedNoteKeywords.add(word);
-                }
-            });
         });
 
         uncategorizedEditsTable.innerHTML = '';
-        detectedEdits.forEach(editText => {
+        // Convert Set to array and sort alphabetically before rendering
+        const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b));
+        
+        sortedEdits.forEach(editText => {
             const row = uncategorizedEditsTable.insertRow();
             row.insertCell().textContent = editText;
             row.insertCell().appendChild(createCategoryDropdown());
         });
         
-        uncategorizedNotesTable.innerHTML = '';
-        detectedNoteKeywords.forEach(keyword => {
-            const row = uncategorizedNotesTable.insertRow();
-            row.insertCell().textContent = keyword;
-            row.insertCell().appendChild(createCategoryDropdown());
-        });
-        
-        const hasRules = detectedEdits.size > 0 || detectedNoteKeywords.size > 0;
+        const hasRules = sortedEdits.length > 0;
         rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none';
         noRulesFoundDiv.style.display = hasRules ? 'none' : 'block';
-        noRulesFoundDiv.textContent = 'No new, uncategorized edits or notes were found in the uploaded file.';
+        noRulesFoundDiv.textContent = 'No new, uncategorized claim edits were found in the uploaded file.';
     }
 
     newCategoryForm.addEventListener('submit', async (e) => {
@@ -400,47 +352,30 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!response.ok) throw new Error('Failed to create category');
             newCategoryNameInput.value = '';
             await loadCategories();
-        } catch (error) {
-            alert('Failed to add category. It may already exist.');
-        }
+        } catch (error) { alert('Failed to add category. It may already exist.'); }
     });
 
     async function deleteCategory(id) {
-        if (!confirm('Are you sure? Deleting a category will also delete all associated rules.')) return;
+        if (!confirm('Are you sure? This will delete all associated rules.')) return;
         try {
             const response = await fetch(`${CATEGORIES_API}?id=${id}`, { method: 'DELETE' });
             if (!response.ok) throw new Error('Delete failed');
             await loadCategories();
-        } catch (error) {
-            alert('Failed to delete category.');
-        }
+        } catch (error) { alert('Failed to delete category.'); }
     }
 
     saveCategorizationRulesBtn.addEventListener('click', async () => {
-        const getRulesFromTable = (table) => Array.from(table.querySelectorAll('tr')).map(row => ({
+        const editRulesToSave = Array.from(uncategorizedEditsTable.querySelectorAll('tr')).map(row => ({
             text: row.cells[0].textContent,
             category_id: row.cells[1].querySelector('select').value
         })).filter(rule => rule.text && rule.category_id);
 
-        const editRulesToSave = getRulesFromTable(uncategorizedEditsTable);
-        const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable);
-
         try {
-            let saved = false;
             if (editRulesToSave.length > 0) {
-                const res = await fetch(`${RULES_API}?type=edit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editRulesToSave) });
+                const res = await fetch(RULES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editRulesToSave) });
                 if (!res.ok) throw new Error('Failed to save edit rules');
-                saved = true;
-            }
-            if (noteRulesToSave.length > 0) {
-                const res = await fetch(`${RULES_API}?type=note`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(noteRulesToSave) });
-                if (!res.ok) throw new Error('Failed to save note rules');
-                saved = true;
-            }
-            if (saved) {
                 alert('Rules saved successfully!');
                 uncategorizedEditsTable.innerHTML = '';
-                uncategorizedNotesTable.innerHTML = '';
                 rulesAssignmentContainer.style.display = 'none';
                 noRulesFoundDiv.style.display = 'block';
                 noRulesFoundDiv.textContent = 'Upload a file to begin.';
@@ -455,7 +390,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     loadCategories();
     loadRules();
-    // --- END: NEW CATEGORIZATION UI SCRIPT ---
+    // --- END: CATEGORIZATION UI SCRIPT ---
 });
 </script>
 </body>
