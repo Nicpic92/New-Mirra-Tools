@@ -56,9 +56,9 @@
         </div>
 
         <div id="dashboardContent">
-            <!-- PDF OPTIONS -->
+            <!-- OPTIONS -->
             <div class="pdf-options card p-3 mb-4">
-                <h5 class="card-title fw-bold">2. PDF Report Options</h5>
+                <h5 class="card-title fw-bold">2. Report Options</h5>
                 <div class="row">
                     <div class="col-md-4 mb-3">
                         <label for="clientName" class="form-label small fw-bold">Client Name</label>
@@ -74,6 +74,11 @@
                     <div class="col-md-4 mb-3">
                         <label class="form-label small fw-bold d-block">&nbsp;</label>
                         <button class="btn btn-dark w-100" id="generatePdfBtn">Download Detailed Report as PDF</button>
+                    </div>
+                    <!-- NEW BUTTON FOR SAVING CONFIGURATION -->
+                    <div class="col-12 mt-2">
+                        <button class="btn btn-primary" id="saveConfigBtn">Save Report Configuration</button>
+                        <small class="text-muted ms-2">Saves settings like Client Name and Aging Basis.</small>
                     </div>
                 </div>
             </div>
@@ -199,6 +204,66 @@
         return undefined;
     };
 
+    // --- NEW FUNCTIONS FOR SAVING AND LOADING CONFIGURATION ---
+
+    async function saveConfiguration() {
+        console.log("Attempting to save configuration...");
+        // Gather the current values from the UI elements you want to save
+        const configToSave = {
+            clientName: document.getElementById('clientName').value,
+            agingCalc: document.getElementById('agingCalc').value,
+            // Add any other configurations you want to save in the future
+            // For example: lastUsedTab: document.querySelector('.nav-link.active').id
+        };
+
+        try {
+            const response = await fetch('/.netlify/functions/save-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(configToSave)
+            });
+            if (!response.ok) {
+                throw new Error(`Failed to save configuration. Server responded with ${response.status}`);
+            }
+            const result = await response.json();
+            alert(result.message); // e.g., "Configuration saved successfully!"
+            console.log("Configuration saved:", configToSave);
+        } catch (error) {
+            console.error('Error during saveConfiguration:', error);
+            alert('Could not save configuration. See console for details.');
+        }
+    }
+
+    async function loadConfiguration() {
+        console.log("Attempting to load configuration...");
+        try {
+            const response = await fetch('/.netlify/functions/get-config');
+            if (!response.ok) {
+                throw new Error(`Failed to load configuration. Server responded with ${response.status}`);
+            }
+            const config = await response.json();
+            
+            // Check if the loaded config has data before applying it
+            if (config && Object.keys(config).length > 0) {
+                // Apply the loaded configuration to your UI elements
+                if (config.clientName) {
+                    document.getElementById('clientName').value = config.clientName;
+                }
+                if (config.agingCalc) {
+                    document.getElementById('agingCalc').value = config.agingCalc;
+                }
+                console.log("Configuration successfully loaded and applied:", config);
+            } else {
+                console.log("No saved configuration found or configuration is empty.");
+            }
+
+        } catch (error) {
+            console.error('Error during loadConfiguration:', error);
+            // It's okay to fail silently here, as there might not be a saved config yet.
+        }
+    }
+
+
     // --- Event Listeners ---
     document.addEventListener('DOMContentLoaded', () => {
         document.getElementById('reportFile').addEventListener('change', handleFile);
@@ -216,6 +281,12 @@
         });
         document.getElementById('categoryFilter').addEventListener('change', () => renderWorkQueue(allClaimsData));
         document.getElementById('downloadCategoryReportsBtn').addEventListener('click', downloadCategoryReports);
+        
+        // --- NEW EVENT LISTENER FOR THE SAVE BUTTON ---
+        document.getElementById('saveConfigBtn').addEventListener('click', saveConfiguration);
+
+        // --- LOAD CONFIGURATION ON PAGE LOAD ---
+        loadConfiguration();
     });
 
     // --- Main file handling and processing logic ---
@@ -534,9 +605,8 @@
         for (const category of categories) {
             const categoryData = allClaimsData.filter(c => c.category === category);
             
-            // MODIFIED PART: Combine original data with new category data
             const exportData = categoryData.map(c => ({
-                ...c.original, // This includes all original columns
+                ...c.original, 
                 'Priority Score': c.priorityScore,
                 'Assigned Team': c.team,
                 'Category': c.category
@@ -550,7 +620,7 @@
             const fileName = `${clientName}_${safeCategoryName}_Action_Items_${formattedDate}.xlsx`;
             
             XLSX.writeFile(wb, fileName);
-            await new Promise(resolve => setTimeout(resolve, 500)); // Brief pause to allow multiple downloads
+            await new Promise(resolve => setTimeout(resolve, 500)); 
         }
     }
 
