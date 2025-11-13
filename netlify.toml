@@ -1,0 +1,9 @@
+# This is the configuration file for Netlify
+
+[build]
+  # This tells Netlify where to find your website files to publish.
+  # "." means the root directory.
+  publish = "."
+
+  # This confirms where your serverless functions are.
+  functions = "netlify/functions"
