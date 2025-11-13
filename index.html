@@ -282,28 +282,33 @@
         }
 
         function analyzeAndProcessClaims(data) {
-            const metrics = { totalClaims: 0, totalNetPayment: 0, claimsPend: 0, claimsDenied: 0, claimsByStatus: {}, claimsByState: {}, claimsByNetwork: {}, claimsByEdit: {}, providerCounts: { overall: {}, onhold: {}, mgmtreview: {} }};
+            const metrics = { 
+                totalClaims: 0, 
+                totalNetPayment: 0, 
+                claimsPend: 0, 
+                claimsDenied: 0, 
+                claimsByStatus: {}, 
+                claimsByState: {}, 
+                claimsByNetwork: {}, 
+                claimsByEdit: {}, 
+                providerCounts: { overall: {}, onhold: {}, mgmtreview: {} }
+            };
+
+            let totalAgeSum = 0;
+            let cleanAgeSum = 0;
+            let cleanClaimCount = 0;
             
             const createAgingTable = () => ({
-                '0-20': { par: 0, nonpar: 0 },
-                '21-27': { par: 0, nonpar: 0 },
-                '28-30': { par: 0, nonpar: 0 },
-                '31-59': { par: 0, nonpar: 0 },
-                '60+': { par: 0, nonpar: 0 },
+                '0-20': { par: 0, nonpar: 0 }, '21-27': { par: 0, nonpar: 0 }, '28-30': { par: 0, nonpar: 0 },
+                '31-59': { par: 0, nonpar: 0 }, '60+': { par: 0, nonpar: 0 },
             });
-            const agingData = {
-                combined: createAgingTable(),
-                active: createAgingTable(),
-                prebatch: createAgingTable()
-            };
+            const agingData = { combined: createAgingTable(), active: createAgingTable(), prebatch: createAgingTable() };
             const getAgeBin = (age) => {
-                if (age <= 20) return '0-20';
-                if (age <= 27) return '21-27';
-                if (age <= 30) return '28-30';
-                if (age <= 59) return '31-59';
-                return '60+';
+                if (age <= 20) return '0-20'; if (age <= 27) return '21-27'; if (age <= 30) return '28-30';
+                if (age <= 59) return '31-59'; return '60+';
             };
             const activeStatuses = ['PEND', 'DRAFT', 'ONHOLD', 'MANAGEMENTREVIEW', 'APPROVED'];
+            const actionableStates = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'];
 
             const claims = data.map(rawClaim => {
                 const processedClaim = {
@@ -319,6 +324,8 @@
                 };
 
                 metrics.totalClaims++;
+                totalAgeSum += processedClaim.age;
+
                 if (!isNaN(processedClaim.netPayment)) metrics.totalNetPayment += processedClaim.netPayment;
                 if (processedClaim.status === 'PEND') metrics.claimsPend++;
                 if (processedClaim.status === 'DENY') metrics.claimsDenied++;
@@ -334,14 +341,10 @@
                 const networkKey = (processedClaim.networkStatus.toUpperCase().includes('NON') || processedClaim.networkStatus.toUpperCase().includes('OUT')) ? 'nonpar' : 'par';
                 
                 agingData.combined[ageBin][networkKey]++;
-                if (activeStatuses.includes(processedClaim.status)) {
-                    agingData.active[ageBin][networkKey]++;
-                }
-                if (processedClaim.state === 'PREBATCH') {
-                    agingData.prebatch[ageBin][networkKey]++;
-                }
+                if (activeStatuses.includes(processedClaim.status)) agingData.active[ageBin][networkKey]++;
+                if (processedClaim.state === 'PREBATCH') agingData.prebatch[ageBin][networkKey]++;
 
-                processedClaim.isActionable = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'].includes(processedClaim.state);
+                processedClaim.isActionable = actionableStates.includes(processedClaim.state);
                 if (processedClaim.isActionable) {
                     const categoryInfo = getClaimCategory(rawClaim);
                     processedClaim.category = categoryInfo.category;
@@ -354,10 +357,17 @@
                     processedClaim.source = 'N/A';
                     processedClaim.teamName = 'N/A';
                     processedClaim.priorityScore = -1;
+                    // This is a "clean" claim for aging purposes
+                    cleanAgeSum += processedClaim.age;
+                    cleanClaimCount++;
                 }
                 return processedClaim;
             });
             
+            // Finalize age averages
+            metrics.averageAge = metrics.totalClaims > 0 ? totalAgeSum / metrics.totalClaims : 0;
+            metrics.averageCleanAge = cleanClaimCount > 0 ? cleanAgeSum / cleanClaimCount : 0;
+
             const getTop10 = (counts, filterKey = null) => Object.entries(counts).filter(([k]) => k !== filterKey).sort(([, a], [, b]) => b - a).slice(0, 10).reduce((acc, [l, d]) => (acc.labels.push(l), acc.data.push(d), acc), { labels: [], data: [] });
             metrics.topEdits = getTop10(metrics.claimsByEdit, 'No Edits');
             metrics.topProvidersOverall = getTop10(metrics.providerCounts.overall);
@@ -366,10 +376,7 @@
             
             const processSimpleTable = (counts) => {
                 const sorted = Object.entries(counts).sort(([,a],[,b]) => b - a);
-                return {
-                    labels: sorted.map(item => item[0]),
-                    data: sorted.map(item => item[1])
-                };
+                return { labels: sorted.map(item => item[0]), data: sorted.map(item => item[1]) };
             };
             metrics.claimsByFinalStatus = processSimpleTable(metrics.claimsByStatus);
             metrics.claimsByWorkflowState = processSimpleTable(metrics.claimsByState);
@@ -405,9 +412,8 @@
                 if (!widget.groupBy) return;
                 const aggregation = data.reduce((acc, rawClaim) => {
                     const key = getVal(rawClaim, widget.groupBy) || 'Unspecified';
-                    if (!acc[key]) {
-                        acc[key] = (widget.metricType === 'count') ? 0 : { sum: 0, count: 0 };
-                    }
+                    if (!acc[key]) acc[key] = (widget.metricType === 'count') ? 0 : { sum: 0, count: 0 };
+                    
                     if (widget.metricType === 'count') {
                         acc[key]++;
                     } else if (widget.metricType === 'sum' && widget.metricColumn) {
@@ -449,7 +455,16 @@
         function renderDashboard(claims, metrics) {
             const fNum = (num) => num.toLocaleString('en-US');
             const fCur = (num) => num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-            document.getElementById('executive-summary-cards').innerHTML = `<div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #0d6efd;"><div class="metric-label">TOTAL CLAIMS</div><div class="metric-value">${fNum(metrics.totalClaims)}</div></div></div><div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #198754;"><div class="metric-label">TOTAL NET PAYMENT (PENDING)</div><div class="metric-value">${fCur(metrics.totalNetPayment)}</div></div></div><div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #ffc107;"><div class="metric-label">CLAIMS PEND STATUS</div><div class="metric-value">${fNum(metrics.claimsPend)}</div></div></div><div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #dc3545;"><div class="metric-label">CLAIMS DENIED</div><div class="metric-value">${fNum(metrics.claimsDenied)}</div></div></div>`;
+            
+            document.getElementById('executive-summary-cards').innerHTML = `
+                <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #0d6efd;"><div class="metric-label">TOTAL CLAIMS</div><div class="metric-value">${fNum(metrics.totalClaims)}</div></div></div>
+                <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #198754;"><div class="metric-label">TOTAL NET PAYMENT (PENDING)</div><div class="metric-value">${fCur(metrics.totalNetPayment)}</div></div></div>
+                <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #ffc107;"><div class="metric-label">CLAIMS PEND STATUS</div><div class="metric-value">${fNum(metrics.claimsPend)}</div></div></div>
+                <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #dc3545;"><div class="metric-label">CLAIMS DENIED</div><div class="metric-value">${fNum(metrics.claimsDenied)}</div></div></div>
+                <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #20c997;"><div class="metric-label">AVERAGE CLAIM AGE (ALL)</div><div class="metric-value">${metrics.averageAge.toFixed(1)} Days</div></div></div>
+                <div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #6f42c1;"><div class="metric-label">AVERAGE CLAIM AGE (CLEAN)</div><div class="metric-value">${metrics.averageCleanAge.toFixed(1)} Days</div></div></div>
+            `;
+            
             Object.values(myCharts).forEach(chart => chart.destroy());
             populateTeamDownloadButtons(claims);
         }
@@ -621,12 +636,13 @@
             const { jsPDF } = window.jspdf;
             const pdf = new jsPDF('p', 'pt', 'a4');
             const margin = 40;
+            const pageHeight = pdf.internal.pageSize.getHeight();
             const pageContentWidth = pdf.internal.pageSize.getWidth() - (margin * 2);
             let currentY = margin;
 
             // --- PDF HELPER FUNCTIONS ---
             const checkPageBreak = (spaceNeeded) => {
-                if (currentY + spaceNeeded > pdf.internal.pageSize.getHeight() - margin) {
+                if (currentY + spaceNeeded > pageHeight - margin) {
                     pdf.addPage();
                     currentY = margin;
                 }
@@ -638,7 +654,6 @@
                 currentY += 40;
             };
             const addSectionHeader = (title) => {
-                checkPageBreak(40);
                 pdf.setFont('helvetica', 'bold');
                 pdf.setFontSize(16);
                 pdf.text(title, margin, currentY);
@@ -651,7 +666,9 @@
                     { label: 'TOTAL CLAIMS', value: fNum(metrics.totalClaims), color: '#0d6efd'},
                     { label: 'TOTAL NET PAYMENT (PENDING)', value: fCur(metrics.totalNetPayment), color: '#198754'},
                     { label: 'CLAIMS PEND STATUS', value: fNum(metrics.claimsPend), color: '#ffc107'},
-                    { label: 'CLAIMS DENIED', value: fNum(metrics.claimsDenied), color: '#dc3545'}
+                    { label: 'CLAIMS DENIED', value: fNum(metrics.claimsDenied), color: '#dc3545'},
+                    { label: 'AVG. CLAIM AGE (ALL)', value: `${metrics.averageAge.toFixed(1)} Days`, color: '#20c997'},
+                    { label: 'AVG. CLAIM AGE (CLEAN)', value: `${metrics.averageCleanAge.toFixed(1)} Days`, color: '#6f42c1'}
                 ];
                 
                 const cardsPerRow = 2;
@@ -666,26 +683,19 @@
                         currentX = x;
                     }
                     
-                    pdf.setDrawColor('#dee2e6');
-                    pdf.setLineWidth(1);
-                    pdf.rect(currentX, y, cardWidth, cardHeight);
-                    
-                    pdf.setFillColor(card.color);
-                    pdf.rect(currentX, y, 4, cardHeight, 'F');
+                    pdf.setDrawColor('#dee2e6'); pdf.setLineWidth(1); pdf.rect(currentX, y, cardWidth, cardHeight);
+                    pdf.setFillColor(card.color); pdf.rect(currentX, y, 4, cardHeight, 'F');
                     
                     const textX = currentX + 15;
-                    pdf.setFont('helvetica', 'bold');
-                    pdf.setFontSize(8);
-                    pdf.setTextColor('#6c757d');
+                    pdf.setFont('helvetica', 'bold'); pdf.setFontSize(8); pdf.setTextColor('#6c757d');
                     pdf.text(card.label, textX, y + 20);
                     
-                    pdf.setFontSize(22);
-                    pdf.setTextColor('#212529');
+                    pdf.setFontSize(22); pdf.setTextColor('#212529');
                     pdf.text(card.value, textX, y + 45);
                     
                     currentX += cardWidth + gap;
                 });
-                return y + cardHeight + 20;
+                return y + cardHeight; // Return the final Y position
             };
             const prepareTableData = (dataSourceId) => {
                 const sourceData = aggregatedMetrics[dataSourceId];
@@ -696,14 +706,33 @@
                 }));
             };
 
+            const estimateSectionHeight = (section) => {
+                const HEADER_HEIGHT = 45; // title + some padding
+                const ROW_HEIGHT = 18;
+                const CARD_SECTION_HEIGHT = 220; // 3 rows of cards + header
+                const AGING_TABLE_ROWS = 8; // 5 bins + percentage + total + header
+
+                switch(section.type) {
+                    case 'summary':
+                        return CARD_SECTION_HEIGHT;
+                    case 'aging_table':
+                        return HEADER_HEIGHT + (AGING_TABLE_ROWS * ROW_HEIGHT);
+                    case 'table':
+                    case 'custom_table':
+                        const tableData = prepareTableData(section.id);
+                        return HEADER_HEIGHT + ((tableData.length + 1) * ROW_HEIGHT); // +1 for header
+                    default:
+                        return 100; // default fallback
+                }
+            };
+            
             // --- RENDER PDF HEADER ---
-            // const logoImg = document.getElementById('logoImage');
-            // pdf.addImage(logoImg, 'PNG', margin, currentY, 84, 24);
-            // currentY += 40;
             addMainTitle(pdfTitle);
 
             // --- RENDER DYNAMIC SECTIONS ---
             for (const section of pdfConfig.sections) {
+                const estimatedHeight = estimateSectionHeight(section);
+                checkPageBreak(estimatedHeight);
                 addSectionHeader(section.title);
                 
                 switch (section.type) {
@@ -729,19 +758,17 @@
                             const body = tableData.map(row => columns.map(col => {
                                 let val = row[col.dataKey];
                                 if (typeof val === 'number') {
-                                    if (widgetDefinition.metricType === 'sum') {
-                                        return val.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
-                                    }
-                                    return val.toLocaleString();
+                                    return (widgetDefinition.metricType === 'sum') ? 
+                                        val.toLocaleString('en-US', { style: 'currency', currency: 'USD' }) : 
+                                        val.toLocaleString();
                                 }
                                 return val;
                             }));
                             
                             pdf.autoTable({ startY: currentY, head, body, theme: 'striped', headStyles: { fillColor: [70, 90, 108] } });
-                            currentY = pdf.previousAutoTable.finalY + 20;
+                            currentY = pdf.previousAutoTable.finalY;
                         } else {
-                            pdf.setFont('helvetica', 'normal');
-                            pdf.setFontSize(10);
+                            pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
                             pdf.text('No data available for this section.', margin, currentY);
                             currentY += 20;
                         }
@@ -757,15 +784,11 @@
                                 const binData = agingData.bins[bin];
                                 body.push([bin, binData.par.toLocaleString(), binData.nonpar.toLocaleString(), binData.total.toLocaleString()]);
                             });
-                            const percData = agingData.bins['60+ Percent'];
-                            body.push(['60+ Percentage', percData.par, percData.nonpar, percData.total]);
+                            body.push(['60+ Percentage', agingData.bins['60+ Percent'].par, agingData.bins['60+ Percent'].nonpar, agingData.bins['60+ Percent'].total]);
                             body.push(['Grand Total', agingData.totals.par.toLocaleString(), agingData.totals.nonpar.toLocaleString(), agingData.totals.grand.toLocaleString()]);
 
                             pdf.autoTable({
-                                startY: currentY,
-                                head: head,
-                                body: body,
-                                theme: 'striped',
+                                startY: currentY, head, body, theme: 'striped',
                                 headStyles: { fillColor: [70, 90, 108] },
                                 didParseCell: (data) => {
                                     if (data.row.raw[0] === '60+ Percentage' || data.row.raw[0] === 'Grand Total') {
@@ -773,16 +796,17 @@
                                     }
                                 }
                             });
-                            currentY = pdf.previousAutoTable.finalY + 20;
+                            currentY = pdf.previousAutoTable.finalY;
                         } else {
-                            pdf.setFont('helvetica', 'normal');
-                            pdf.setFontSize(10);
+                            pdf.setFont('helvetica', 'normal'); pdf.setFontSize(10);
                             pdf.text('No aging data available.', margin, currentY);
                             currentY += 20;
                         }
                         break;
                     }
                 }
+                 // Add consistent spacing after each section
+                currentY += 25;
             }
             
             pdf.save(fileName);
