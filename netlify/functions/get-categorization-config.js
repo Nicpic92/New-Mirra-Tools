@@ -8,20 +8,11 @@ exports.handler = async function(event, context) {
             FROM claim_edit_rules r
             JOIN claim_categories c ON r.category_id = c.id;
         `;
-        const noteRulesQuery = `
-            SELECT r.note_keyword, c.category_name
-            FROM claim_note_rules r
-            JOIN claim_categories c ON r.category_id = c.id;
-        `;
-
-        const [editRulesResult, noteRulesResult] = await Promise.all([
-            pool.query(editRulesQuery),
-            pool.query(noteRulesQuery)
-        ]);
+        
+        const editRulesResult = await pool.query(editRulesQuery);
 
         const config = {
             editRules: editRulesResult.rows,
-            noteRules: noteRulesResult.rows,
         };
 
         return {
