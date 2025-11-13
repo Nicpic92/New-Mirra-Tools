@@ -11,6 +11,8 @@
         .table-responsive-sm { max-height: 400px; overflow-y: auto; }
         .rule-text { max-width: 300px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .btn-delete-rule { line-height: 1; }
+        .config-name { cursor: pointer; text-decoration: none; }
+        .config-name:hover { text-decoration: underline; }
     </style>
 </head>
 <body>
@@ -38,7 +40,8 @@
                                     <h5>Step 2: Upload to Map Columns</h5>
                                      <div class="mb-3"><label for="reportUploader" class="form-label">Upload XLSX File</label><input class="form-control" type="file" id="reportUploader" accept=".xlsx"></div>
                                     <div id="mappingSection" class="mt-4" style="display: none;">
-                                        <h6>Map Your Fields to Detected Headers:</h6>
+                                        <h6 id="mappingHeader">Map Your Fields to Detected Headers:</h6>
+                                        <div id="mapping-alert" class="alert alert-info d-none"></div>
                                         <table class="table table-bordered table-sm mapping-table">
                                             <thead class="table-light"><tr><th>Standard Field</th><th>Client's Column Header</th></tr></thead>
                                             <tbody id="mappingTableBody"></tbody>
@@ -51,6 +54,7 @@
                             </div>
                             <div class="col-md-5">
                                 <h5>Existing Configurations</h5>
+                                <p class="small text-muted">Click a name to edit.</p>
                                 <ul class="list-group" id="configList"></ul>
                             </div>
                          </div>
@@ -154,13 +158,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const CONFIG_API = '/.netlify/functions/configurations', TEAMS_API = '/.netlify/functions/teams', CATEGORIES_API = '/.netlify/functions/categories', RULES_API = '/.netlify/functions/rules';
 
     // DOM Elements
-    const configForm = document.getElementById('configForm'), configIdInput = document.getElementById('configId'), configNameInput = document.getElementById('configName'), clientNameInput = document.getElementById('clientName'), clearBtn = document.getElementById('clearBtn'), reportUploader = document.getElementById('reportUploader'), mappingSection = document.getElementById('mappingSection'), mappingTableBody = document.getElementById('mappingTableBody'), configList = document.getElementById('configList');
+    const configForm = document.getElementById('configForm'), configIdInput = document.getElementById('configId'), configNameInput = document.getElementById('configName'), clientNameInput = document.getElementById('clientName'), clearBtn = document.getElementById('clearBtn'), reportUploader = document.getElementById('reportUploader'), mappingSection = document.getElementById('mappingSection'), mappingTableBody = document.getElementById('mappingTableBody'), mappingHeader = document.getElementById('mappingHeader'), mappingAlert = document.getElementById('mapping-alert'), configList = document.getElementById('configList');
     const teamList = document.getElementById('teamList'), newTeamForm = document.getElementById('newTeamForm'), newTeamNameInput = document.getElementById('newTeamName'), teamCategorySelect = document.getElementById('teamCategorySelect'), categoryListContainer = document.getElementById('categoryListContainer'), newCategoryForm = document.getElementById('newCategoryForm'), newCategoryNameInput = document.getElementById('newCategoryName');
     const categorizationConfigSelector = document.getElementById('categorizationConfigSelector'), categorizationReportUploader = document.getElementById('categorizationReportUploader'), rulesAssignmentContainer = document.getElementById('rulesAssignmentContainer'), uncategorizedEditsTable = document.getElementById('uncategorizedEditsTable'), uncategorizedNotesTable = document.getElementById('uncategorizedNotesTable'), noRulesFoundDiv = document.getElementById('noRulesFound');
     const existingEditsTableBody = document.getElementById('existingEditsTableBody'), existingNotesTableBody = document.getElementById('existingNotesTableBody'), saveExistingChangesBtn = document.getElementById('saveExistingChangesBtn');
 
     // Global State
-    let allTeams = [], allCategories = [], detectedHeaders = [], columnMappingsForCategorization = {};
+    let allTeams = [], allCategories = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {};
     let existingEditRules = new Map(), existingNoteRules = new Map();
     const standardFields = [ { key: 'claimId', displayName: 'Claim ID / Number', required: true }, { key: 'age', displayName: 'Age (in days)', required: true }, { key: 'netPayment', displayName: 'Net Payment Amount', required: true }, { key: 'state', displayName: 'Claim State', required: true }, { key: 'status', displayName: 'Claim Status', required: true }, { key: 'networkStatus', displayName: 'Network Status', required: true }, { key: 'providerName', displayName: 'Billing Provider Name', required: true }, { key: 'edit', displayName: 'Claim Edits', required: true }, { key: 'notes', displayName: 'Claim Notes', required: true }, { key: 'dsnp', displayName: 'DSNP Status', required: false }, { key: 'totalCharges', displayName: 'Total Billed Amount', required: false }, ];
     
@@ -175,7 +179,7 @@ document.addEventListener('DOMContentLoaded', () => {
             configs.forEach(config => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
-                li.textContent = config.config_name;
+                li.innerHTML = `<a href="#" class="config-name flex-grow-1" data-config-id="${config.id}">${config.config_name}</a>`;
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'btn btn-danger btn-sm'; deleteBtn.textContent = 'Delete';
                 deleteBtn.onclick = () => deleteConfig(config.id);
@@ -217,8 +221,27 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAllData() { await Promise.all([loadTeams(), loadCategories(), loadRules(), loadConfigurations()]); }
 
     // --- CLIENT CONFIGURATION LOGIC ---
-    function renderMappingUI() {
+    function editConfig(configId) {
+        const config = (window.allClientConfigs || []).find(c => c.id === configId);
+        if (!config) return;
+        
+        configIdInput.value = config.id;
+        configNameInput.value = config.config_name;
+        clientNameInput.value = config.config_data.clientName || '';
+        mappingsForEditing = config.config_data.columnMappings || {};
+        
+        mappingSection.style.display = 'block';
         mappingTableBody.innerHTML = '';
+        mappingAlert.textContent = 'Upload a file to view or change the column mappings for this configuration.';
+        mappingAlert.classList.remove('d-none');
+        mappingHeader.innerHTML = 'Map Your Fields to Detected Headers:';
+    }
+
+    function renderMappingUI() {
+        mappingHeader.innerHTML = `Map Your Fields to Detected Headers: <span class="badge bg-secondary">${detectedHeaders.length} columns found</span>`;
+        mappingAlert.classList.add('d-none');
+        mappingTableBody.innerHTML = '';
+        
         standardFields.forEach(field => {
             const row = mappingTableBody.insertRow();
             row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`;
@@ -227,7 +250,25 @@ document.addEventListener('DOMContentLoaded', () => {
             select.className = 'form-select form-select-sm';
             select.dataset.standardKey = field.key;
             select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
-            detectedHeaders.forEach(header => select.add(new Option(header, header)));
+            
+            let bestGuess = '';
+            // Attempt to auto-select based on saved mapping or direct name match
+            const savedMapping = mappingsForEditing[field.key];
+            if (savedMapping && detectedHeaders.includes(savedMapping)) {
+                bestGuess = savedMapping;
+            } else if (detectedHeaders.includes(field.displayName)) {
+                bestGuess = field.displayName;
+            } else if (detectedHeaders.includes(field.key)) {
+                bestGuess = field.key;
+            }
+            
+            detectedHeaders.forEach(header => {
+                const option = new Option(header, header);
+                if (header === bestGuess) {
+                    option.selected = true;
+                }
+                select.add(option);
+            });
             cell2.appendChild(select);
         });
         mappingSection.style.display = 'block';
@@ -461,10 +502,25 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(error) { alert(`Error saving changes: ${error.message}`); }
     }
 
+    function clearConfigForm() {
+        configForm.reset();
+        mappingSection.style.display = 'none';
+        mappingAlert.classList.add('d-none');
+        mappingsForEditing = {};
+        reportUploader.value = '';
+    }
+
     // --- EVENT LISTENERS ---
-    configForm.addEventListener('submit', async (e) => { e.preventDefault(); const columnMappings = {}; mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; }); const id = configIdInput.value; const config_data = { clientName: clientNameInput.value, columnMappings }; const method = id ? 'PUT' : 'POST'; const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API; try { await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) }); alert(`Configuration ${id ? 'updated' : 'created'}!`); configForm.reset(); mappingSection.style.display = 'none'; loadConfigurations(); } catch (error) { alert('Failed to save configuration.'); } });
-    reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 }); detectedHeaders = (json[0] || []).filter(h => h != null && h.toString().trim() !== ''); renderMappingUI(); }; reader.readAsArrayBuffer(file); });
-    clearBtn.addEventListener('click', () => { configForm.reset(); mappingSection.style.display = 'none'; });
+    configList.addEventListener('click', (e) => {
+        if (e.target.classList.contains('config-name')) {
+            e.preventDefault();
+            const configId = parseInt(e.target.dataset.configId, 10);
+            editConfig(configId);
+        }
+    });
+    configForm.addEventListener('submit', async (e) => { e.preventDefault(); const columnMappings = {}; mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; }); const id = configIdInput.value; const config_data = { clientName: clientNameInput.value, columnMappings }; const method = id ? 'PUT' : 'POST'; const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API; try { await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) }); alert(`Configuration ${id ? 'updated' : 'created'}!`); clearConfigForm(); await loadConfigurations(); } catch (error) { alert('Failed to save configuration.'); } });
+    reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const sheet = workbook.Sheets[workbook.SheetNames[0]]; if (!sheet) throw new Error("Sheet not found."); const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }); detectedHeaders = (json[0] || []).filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file. Please ensure the first row contains the column names."); return; } renderMappingUI(); } catch (err) { alert(`Error processing file: ${err.message}`); console.error(err); } }; reader.readAsArrayBuffer(file); });
+    clearBtn.addEventListener('click', clearConfigForm);
     newTeamForm.addEventListener('submit', async (e) => { e.preventDefault(); const name = newTeamNameInput.value.trim(); if (!name) return; try { await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) }); newTeamNameInput.value = ''; await loadTeams(); } catch (error) { alert('Failed to add team. It may already exist.'); } });
     newCategoryForm.addEventListener('submit', async (e) => { e.preventDefault(); const category_name = newCategoryNameInput.value.trim(); const team_id = parseInt(teamCategorySelect.value, 10); if (!category_name || !team_id) return alert('Please select a team and enter a category name.'); try { const response = await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id }) }); if (!response.ok) throw new Error('Failed to create category'); const newCategoryData = await response.json(); const team = allTeams.find(t => t.id === team_id); const newCategory = { ...newCategoryData, team_name: team ? team.team_name : 'Unknown' }; allCategories.push(newCategory); renderCategoryList(); addOptionToAllDropdowns(newCategory); newCategoryNameInput.value = ''; } catch (error) { alert('Failed to add category. It may already exist.'); } });
     categorizationConfigSelector.addEventListener('change', () => { const selectedId = parseInt(categorizationConfigSelector.value, 10); const config = (window.allClientConfigs || []).find(c => c.id === selectedId); if (config?.config_data?.columnMappings) { columnMappingsForCategorization = config.config_data.columnMappings; const hasRequiredCols = columnMappingsForCategorization.edit && columnMappingsForCategorization.notes; categorizationReportUploader.disabled = !hasRequiredCols; if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes".') } });
