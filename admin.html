@@ -133,70 +133,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const RULES_API = '/.netlify/functions/rules';
 
     // --- DOM ELEMENTS ---
-    // Client Configs
-    const configForm = document.getElementById('configForm');
-    const configIdInput = document.getElementById('configId');
-    const configNameInput = document.getElementById('configName');
-    const clientNameInput = document.getElementById('clientName');
-    const clearBtn = document.getElementById('clearBtn');
-    const reportUploader = document.getElementById('reportUploader');
-    const mappingSection = document.getElementById('mappingSection');
-    const mappingTableBody = document.getElementById('mappingTableBody');
-    const configList = document.getElementById('configList');
-
-    // Teams & Categories
-    const teamList = document.getElementById('teamList');
-    const newTeamForm = document.getElementById('newTeamForm');
-    const newTeamNameInput = document.getElementById('newTeamName');
-    const teamCategorySelect = document.getElementById('teamCategorySelect');
-    const categoryListContainer = document.getElementById('categoryListContainer');
-    const newCategoryForm = document.getElementById('newCategoryForm');
-    const newCategoryNameInput = document.getElementById('newCategoryName');
-    
-    // Rule Management
-    const categorizationConfigSelector = document.getElementById('categorizationConfigSelector');
-    const categorizationReportUploader = document.getElementById('categorizationReportUploader');
-    const rulesAssignmentContainer = document.getElementById('rulesAssignmentContainer');
-    const uncategorizedEditsTable = document.getElementById('uncategorizedEditsTable');
-    const uncategorizedNotesTable = document.getElementById('uncategorizedNotesTable');
-    const noRulesFoundDiv = document.getElementById('noRulesFound');
-    const saveCategorizationRulesBtn = document.getElementById('saveCategorizationRulesBtn');
+    const configForm = document.getElementById('configForm'), configIdInput = document.getElementById('configId'), configNameInput = document.getElementById('configName'), clientNameInput = document.getElementById('clientName'), clearBtn = document.getElementById('clearBtn'), reportUploader = document.getElementById('reportUploader'), mappingSection = document.getElementById('mappingSection'), mappingTableBody = document.getElementById('mappingTableBody'), configList = document.getElementById('configList');
+    const teamList = document.getElementById('teamList'), newTeamForm = document.getElementById('newTeamForm'), newTeamNameInput = document.getElementById('newTeamName'), teamCategorySelect = document.getElementById('teamCategorySelect'), categoryListContainer = document.getElementById('categoryListContainer'), newCategoryForm = document.getElementById('newCategoryForm'), newCategoryNameInput = document.getElementById('newCategoryName');
+    const categorizationConfigSelector = document.getElementById('categorizationConfigSelector'), categorizationReportUploader = document.getElementById('categorizationReportUploader'), rulesAssignmentContainer = document.getElementById('rulesAssignmentContainer'), uncategorizedEditsTable = document.getElementById('uncategorizedEditsTable'), uncategorizedNotesTable = document.getElementById('uncategorizedNotesTable'), noRulesFoundDiv = document.getElementById('noRulesFound'), saveCategorizationRulesBtn = document.getElementById('saveCategorizationRulesBtn');
 
     // --- GLOBAL STATE ---
-    let detectedHeaders = [];
-    let allTeams = [];
-    let allCategories = [];
-    let existingEditRules = new Map();
-    let existingNoteRules = new Map();
-    let columnMappingsForCategorization = {};
-    const standardFields = [
-        { key: 'claimId', displayName: 'Claim ID / Number', required: true },
-        { key: 'age', displayName: 'Age (in days)', required: true },
-        { key: 'netPayment', displayName: 'Net Payment Amount', required: true },
-        { key: 'state', displayName: 'Claim State', required: true },
-        { key: 'status', displayName: 'Claim Status', required: true },
-        { key: 'networkStatus', displayName: 'Network Status', required: true },
-        { key: 'providerName', displayName: 'Billing Provider Name', required: true },
-        { key: 'edit', displayName: 'Claim Edits', required: true },
-        { key: 'notes', displayName: 'Claim Notes', required: true },
-        { key: 'dsnp', displayName: 'DSNP Status', required: false },
-        { key: 'totalCharges', displayName: 'Total Billed Amount', required: false },
-    ];
+    let allTeams = [], allCategories = [], detectedHeaders = [], columnMappingsForCategorization = {};
+    let existingEditRules = new Map(), existingNoteRules = new Map();
+    const standardFields = [ { key: 'claimId', displayName: 'Claim ID / Number', required: true }, { key: 'age', displayName: 'Age (in days)', required: true }, { key: 'netPayment', displayName: 'Net Payment Amount', required: true }, { key: 'state', displayName: 'Claim State', required: true }, { key: 'status', displayName: 'Claim Status', required: true }, { key: 'networkStatus', displayName: 'Network Status', required: true }, { key: 'providerName', displayName: 'Billing Provider Name', required: true }, { key: 'edit', displayName: 'Claim Edits', required: true }, { key: 'notes', displayName: 'Claim Notes', required: true }, { key: 'dsnp', displayName: 'DSNP Status', required: false }, { key: 'totalCharges', displayName: 'Total Billed Amount', required: false }, ];
     
-    // --- CORE DATA LOADING FUNCTIONS ---
-
-    // THIS FUNCTION IS NOW IN THE MAIN SCOPE
+    // --- CORE DATA LOADING ---
     async function loadConfigurations() {
         try {
             const response = await fetch(CONFIG_API);
             const configs = await response.json();
-            
-            // This global variable is used by the categorization section
             window.allClientConfigs = configs; 
-
             configList.innerHTML = configs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
             categorizationConfigSelector.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
-
             configs.forEach(config => {
                 const li = document.createElement('li');
                 li.className = 'list-group-item d-flex justify-content-between align-items-center';
@@ -207,12 +160,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 deleteBtn.onclick = () => deleteConfig(config.id);
                 li.appendChild(deleteBtn);
                 configList.appendChild(li);
-
                 categorizationConfigSelector.add(new Option(config.config_name, config.id));
             });
-        } catch (error) {
-            console.error('Error loading configurations:', error);
-        }
+        } catch (error) { console.error('Error loading configurations:', error); }
     }
     
     async function loadTeams() {
@@ -234,25 +184,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function loadRules() {
         try {
-            const [editRes, noteRes] = await Promise.all([
-                fetch(`${RULES_API}?type=edit`),
-                fetch(`${RULES_API}?type=note`)
-            ]);
+            const [editRes, noteRes] = await Promise.all([ fetch(`${RULES_API}?type=edit`), fetch(`${RULES_API}?type=note`) ]);
             existingEditRules = new Map((await editRes.json()).map(rule => [rule.text, rule.category_id]));
             existingNoteRules = new Map((await noteRes.json()).map(rule => [rule.text, rule.category_id]));
         } catch (error) { console.error("Failed to load existing rules:", error); }
     }
 
-    // This is the main orchestrator for loading all data on page start
     async function loadAllData() {
-        await loadTeams();
-        await loadCategories();
-        await loadRules();
-        await loadConfigurations(); // Now correctly called
+        await Promise.all([loadTeams(), loadCategories(), loadRules(), loadConfigurations()]);
     }
 
     // --- CLIENT CONFIGURATION LOGIC ---
-    
     function renderMappingUI() {
         mappingTableBody.innerHTML = '';
         standardFields.forEach(field => {
@@ -299,7 +241,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
             const json = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]], { header: 1 });
             detectedHeaders = json[0] || [];
             renderMappingUI();
@@ -310,7 +253,6 @@ document.addEventListener('DOMContentLoaded', () => {
     clearBtn.addEventListener('click', () => configForm.reset());
 
     // --- TEAM & CATEGORY LOGIC ---
-
     function renderTeamList() {
         teamList.innerHTML = allTeams.length ? '' : '<li class="list-group-item">No teams defined.</li>';
         allTeams.forEach(team => {
@@ -358,7 +300,6 @@ document.addEventListener('DOMContentLoaded', () => {
             acc[teamName].push(cat);
             return acc;
         }, {});
-
         Object.keys(grouped).sort().forEach(teamName => {
             const card = document.createElement('div');
             card.className = 'card mb-2';
@@ -381,23 +322,49 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
     
+    // *** THIS FUNCTION IS MODIFIED FOR THE FIX ***
     newCategoryForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const category_name = newCategoryNameInput.value.trim();
-        const team_id = teamCategorySelect.value;
+        const team_id = parseInt(teamCategorySelect.value, 10);
         if (!category_name || !team_id) return alert('Please select a team and enter a category name.');
         try {
-            await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id }) });
+            const response = await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id }) });
+            if (!response.ok) throw new Error('Failed to create category');
+            
+            const newCategory = await response.json();
+            const team = allTeams.find(t => t.id === team_id);
+            newCategory.team_name = team ? team.team_name : 'Unknown';
+            
+            // 1. Update state
+            allCategories.push(newCategory);
+            // 2. Re-render the list on the left
+            renderCategoryList();
+            // 3. Dynamically update the dropdowns on the right
+            addOptionToAllDropdowns(newCategory);
+            
             newCategoryNameInput.value = '';
-            await loadCategories();
         } catch (error) { alert('Failed to add category. It may already exist.'); }
     });
 
+    // *** THIS FUNCTION IS MODIFIED FOR THE FIX ***
     async function deleteCategory(id) {
         if (!confirm('Are you sure? This also deletes associated rules.')) return;
         try {
-            await fetch(`${CATEGORIES_API}?id=${id}`, { method: 'DELETE' });
-            await loadAllData();
+            const response = await fetch(`${CATEGORIES_API}?id=${id}`, { method: 'DELETE' });
+            if (!response.ok) throw new Error('Delete failed');
+
+            // 1. Update state
+            const index = allCategories.findIndex(cat => cat.id === id);
+            if (index > -1) allCategories.splice(index, 1);
+
+            // 2. Re-render the list on the left
+            renderCategoryList();
+            // 3. Dynamically update the dropdowns on the right
+            removeOptionFromAllDropdowns(id);
+            
+            // Reload rules as they might have been cascade-deleted
+            await loadRules();
         } catch (error) { alert('Failed to delete category.'); }
     }
 
@@ -407,8 +374,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const config = (window.allClientConfigs || []).find(c => c.id === selectedId);
         if (config?.config_data?.columnMappings) {
             columnMappingsForCategorization = config.config_data.columnMappings;
-            categorizationReportUploader.disabled = !(columnMappingsForCategorization.edit && columnMappingsForCategorization.notes);
-            if(categorizationReportUploader.disabled) alert('Selected config must map both "Claim Edits" and "Claim Notes".')
+            const hasRequiredCols = columnMappingsForCategorization.edit && columnMappingsForCategorization.notes;
+            categorizationReportUploader.disabled = !hasRequiredCols;
+            if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes".')
         }
     });
 
@@ -417,45 +385,39 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
-            const data = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-            processUploadedReport(data);
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const dataJson = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            processUploadedReport(dataJson);
         };
         reader.readAsArrayBuffer(file);
     });
 
     function processUploadedReport(data) {
-        const detectedEdits = new Set();
-        const detectedNoteKeywords = new Set();
+        const detectedEdits = new Set(), detectedNoteKeywords = new Set();
         const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization;
-
         data.forEach(row => {
             const editValue = row[editColumn];
             if (editValue && !existingEditRules.has(editValue)) detectedEdits.add(editValue);
-            
             const noteValue = (row[notesColumn] || '').toLowerCase();
             noteValue.split(/[^a-z0-9]+/).forEach(word => {
                 if (word.length > 3 && !existingNoteRules.has(word)) detectedNoteKeywords.add(word);
             });
         });
-
         const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b));
         const sortedNotes = Array.from(detectedNoteKeywords).sort((a, b) => a.localeCompare(b));
-        
         uncategorizedEditsTable.innerHTML = '';
         sortedEdits.forEach(text => {
             const row = uncategorizedEditsTable.insertRow();
             row.insertCell().textContent = text;
             row.insertCell().appendChild(createCategoryDropdown());
         });
-        
         uncategorizedNotesTable.innerHTML = '';
         sortedNotes.forEach(keyword => {
             const row = uncategorizedNotesTable.insertRow();
             row.insertCell().textContent = keyword;
             row.insertCell().appendChild(createCategoryDropdown());
         });
-        
         const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0;
         rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none';
         noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items found in the uploaded file.';
@@ -466,10 +428,35 @@ document.addEventListener('DOMContentLoaded', () => {
         const select = document.createElement('select');
         select.className = 'form-select form-select-sm';
         select.add(new Option('Select category...', ''));
-        allCategories.sort((a,b) => a.team_name.localeCompare(b.team_name)).forEach(cat => {
-            select.add(new Option(`${cat.team_name} -> ${cat.category_name}`, cat.id));
-        });
+        allCategories.sort((a,b) => (a.team_name || '').localeCompare(b.team_name || '') || a.category_name.localeCompare(b.category_name))
+            .forEach(cat => {
+                select.add(new Option(`${cat.team_name} -> ${cat.category_name}`, cat.id));
+            });
         return select;
+    }
+
+    // *** NEW HELPER FUNCTION FOR THE FIX ***
+    function addOptionToAllDropdowns(newCategory) {
+        const allSelects = document.querySelectorAll('#uncategorizedEditsTable select, #uncategorizedNotesTable select');
+        const newOption = new Option(`${newCategory.team_name} -> ${newCategory.category_name}`, newCategory.id);
+        allSelects.forEach(select => {
+            select.add(newOption.cloneNode(true));
+        });
+        // This is a simple way to re-sort the options in each dropdown after adding a new one
+        allSelects.forEach(select => {
+            Array.from(select.options)
+                .sort((a, b) => a.text.localeCompare(b.text))
+                .forEach(option => select.add(option));
+        });
+    }
+
+    // *** NEW HELPER FUNCTION FOR THE FIX ***
+    function removeOptionFromAllDropdowns(categoryId) {
+        const allSelects = document.querySelectorAll('#uncategorizedEditsTable select, #uncategorizedNotesTable select');
+        allSelects.forEach(select => {
+            const optionToRemove = select.querySelector(`option[value="${categoryId}"]`);
+            if (optionToRemove) optionToRemove.remove();
+        });
     }
 
     saveCategorizationRulesBtn.addEventListener('click', async () => {
@@ -477,14 +464,11 @@ document.addEventListener('DOMContentLoaded', () => {
             text: row.cells[0].textContent,
             category_id: row.cells[1].querySelector('select').value
         })).filter(rule => rule.category_id);
-
         const editRulesToSave = getRulesFromTable(uncategorizedEditsTable);
         const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable);
-
         try {
             if (editRulesToSave.length > 0) await fetch(`${RULES_API}?type=edit`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editRulesToSave) });
             if (noteRulesToSave.length > 0) await fetch(`${RULES_API}?type=note`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(noteRulesToSave) });
-            
             if (editRulesToSave.length || noteRulesToSave.length) {
                 alert('Rules saved successfully!');
                 rulesAssignmentContainer.style.display = 'none';
