@@ -13,6 +13,7 @@
         .btn-delete-rule { line-height: 1; }
         .config-name { cursor: pointer; text-decoration: none; }
         .config-name:hover { text-decoration: underline; }
+        .pdf-widget { cursor: grab; }
     </style>
 </head>
 <body>
@@ -46,6 +47,26 @@
                                             <thead class="table-light"><tr><th>Standard Field</th><th>Client's Column Header</th></tr></thead>
                                             <tbody id="mappingTableBody"></tbody>
                                         </table>
+                                    </div>
+                                    <hr>
+                                    <!-- NEW PDF BUILDER SECTION -->
+                                    <h5>Step 3: PDF Report Builder</h5>
+                                    <div class="mb-3">
+                                        <label for="pdfReportTitle" class="form-label">PDF Report Title Template</label>
+                                        <input type="text" class="form-control" id="pdfReportTitle" placeholder="{clientName} Daily Summary Report {date}">
+                                        <div class="form-text">Use placeholders like {clientName} and {date}.</div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-6">
+                                            <h6>Available Widgets</h6>
+                                            <ul class="list-group" id="availableWidgets"></ul>
+                                        </div>
+                                        <div class="col-6">
+                                            <h6>Report Layout</h6>
+                                            <ul class="list-group" id="reportLayout">
+                                                <li class="list-group-item text-muted">Add widgets from the left.</li>
+                                            </ul>
+                                        </div>
                                     </div>
                                     <hr>
                                     <button type="submit" class="btn btn-primary">Save Configuration</button>
@@ -162,44 +183,92 @@ document.addEventListener('DOMContentLoaded', () => {
     const teamList = document.getElementById('teamList'), newTeamForm = document.getElementById('newTeamForm'), newTeamNameInput = document.getElementById('newTeamName'), teamCategorySelect = document.getElementById('teamCategorySelect'), categoryListContainer = document.getElementById('categoryListContainer'), newCategoryForm = document.getElementById('newCategoryForm'), newCategoryNameInput = document.getElementById('newCategoryName');
     const categorizationConfigSelector = document.getElementById('categorizationConfigSelector'), categorizationReportUploader = document.getElementById('categorizationReportUploader'), rulesAssignmentContainer = document.getElementById('rulesAssignmentContainer'), uncategorizedEditsTable = document.getElementById('uncategorizedEditsTable'), uncategorizedNotesTable = document.getElementById('uncategorizedNotesTable'), noRulesFoundDiv = document.getElementById('noRulesFound');
     const existingEditsTableBody = document.getElementById('existingEditsTableBody'), existingNotesTableBody = document.getElementById('existingNotesTableBody'), saveExistingChangesBtn = document.getElementById('saveExistingChangesBtn');
+    // PDF Builder Elements
+    const pdfReportTitleInput = document.getElementById('pdfReportTitle'), availableWidgetsList = document.getElementById('availableWidgets'), reportLayoutList = document.getElementById('reportLayout');
 
     // Global State
     let allTeams = [], allCategories = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {};
     let existingEditRules = new Map(), existingNoteRules = new Map();
     const standardFields = [
-        // Required Fields for Core Dashboard Functionality
-        { key: 'claimId', displayName: 'Claim ID / Number', required: true },
-        { key: 'age', displayName: 'Age (in days)', required: true },
-        { key: 'netPayment', displayName: 'Net Payment Amount', required: true },
-        { key: 'state', displayName: 'Claim State', required: true },
-        { key: 'status', displayName: 'Claim Status', required: true },
-        { key: 'networkStatus', displayName: 'Network Status', required: true },
-        { key: 'providerName', displayName: 'Billing Provider Name', required: true },
-        { key: 'edit', displayName: 'Claim Edits', required: true },
-        { key: 'notes', displayName: 'Claim Notes', required: true },
-        // Optional Fields for Enhanced Categorization & Data Context
-        { key: 'totalCharges', displayName: 'Total Billed Amount', required: false },
-        { key: 'dsnp', displayName: 'DSNP Status', required: false },
-        { key: 'payer', displayName: 'Payer Name', required: false },
-        { key: 'claimCategory', displayName: 'Category', required: false },
-        { key: 'claimType', displayName: 'Claim Type', required: false },
-        { key: 'receivedDate', displayName: 'Received Date', required: false },
-        { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID', required: false },
-        { key: 'billingProviderNpi', displayName: 'Billing Provider NPI', required: false },
-        { key: 'patientName', displayName: 'Patient Name', required: false },
-        { key: 'subscriberId', displayName: 'Subscriber ID', required: false },
-        { key: 'renderingProviderName', displayName: 'Rendering Provider Name', required: false },
-        { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI', required: false },
-        { key: 'dosFrom', displayName: 'Date of Service (From)', required: false },
-        { key: 'dosTo', displayName: 'Date of Service (To)', required: false },
-        { key: 'cleanAge', displayName: 'Clean Age', required: false },
-        { key: 'pbpName', displayName: 'PBP Name', required: false },
-        { key: 'planName', displayName: 'Plan Name', required: false },
-        { key: 'activityLog', displayName: 'Activity Log Description', required: false },
-        { key: 'activityUser', displayName: 'Activity Performed By', required: false },
-        { key: 'activityDate', displayName: 'Activity Performed On', required: false }
+        { key: 'claimId', displayName: 'Claim ID / Number', required: true }, { key: 'age', displayName: 'Age (in days)', required: true }, { key: 'netPayment', displayName: 'Net Payment Amount', required: true }, { key: 'state', displayName: 'Claim State', required: true }, { key: 'status', displayName: 'Claim Status', required: true }, { key: 'networkStatus', displayName: 'Network Status', required: true }, { key: 'providerName', displayName: 'Billing Provider Name', required: true }, { key: 'edit', displayName: 'Claim Edits', required: true }, { key: 'notes', displayName: 'Claim Notes', required: true }, { key: 'totalCharges', displayName: 'Total Billed Amount', required: false }, { key: 'dsnp', displayName: 'DSNP Status', required: false }, { key: 'payer', displayName: 'Payer Name', required: false }, { key: 'claimCategory', displayName: 'Category', required: false }, { key: 'claimType', displayName: 'Claim Type', required: false }, { key: 'receivedDate', displayName: 'Received Date', required: false }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID', required: false }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI', required: false }, { key: 'patientName', displayName: 'Patient Name', required: false }, { key: 'subscriberId', displayName: 'Subscriber ID', required: false }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name', required: false }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI', required: false }, { key: 'dosFrom', displayName: 'Date of Service (From)', required: false }, { key: 'dosTo', displayName: 'Date of Service (To)', required: false }, { key: 'cleanAge', displayName: 'Clean Age', required: false }, { key: 'pbpName', displayName: 'PBP Name', required: false }, { key: 'planName', displayName: 'Plan Name', required: false }, { key: 'activityLog', displayName: 'Activity Log Description', required: false }, { key: 'activityUser', displayName: 'Activity Performed By', required: false }, { key: 'activityDate', displayName: 'Activity Performed On', required: false }
     ];
     
+    // --- PDF BUILDER LOGIC ---
+    const availablePdfWidgets = [
+        { id: 'summary', name: 'Executive Summary Cards', type: 'summary' },
+        { id: 'topEdits', name: 'Top 10 Edits Table', type: 'table', dataSource: 'topEdits', columns: [{ header: 'Edit Rule', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] },
+        { id: 'topProvidersOverall', name: 'Top 10 Providers (All)', type: 'table', dataSource: 'topProvidersOverall', columns: [{ header: 'Provider Name', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] },
+        { id: 'topProvidersOnHold', name: 'Top 10 Providers (On Hold)', type: 'table', dataSource: 'topProvidersOnHold', columns: [{ header: 'Provider Name', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] },
+        { id: 'topProvidersMgmtReview', name: 'Top 10 Providers (Mgmt Review)', type: 'table', dataSource: 'topProvidersMgmtReview', columns: [{ header: 'Provider Name', dataKey: 'label' }, { header: 'Count', dataKey: 'data' }] }
+    ];
+
+    function initializePdfBuilder() {
+        availableWidgetsList.innerHTML = '';
+        availablePdfWidgets.forEach(widget => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item d-flex justify-content-between align-items-center';
+            li.textContent = widget.name;
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn btn-sm btn-outline-primary';
+            addBtn.innerHTML = '<i class="bi bi-plus"></i> Add';
+            addBtn.onclick = () => addWidgetToLayout(widget);
+            li.appendChild(addBtn);
+            availableWidgetsList.appendChild(li);
+        });
+    }
+
+    function addWidgetToLayout(widget, customTitle = '') {
+        if (reportLayoutList.querySelector('.text-muted')) {
+            reportLayoutList.innerHTML = '';
+        }
+        const li = document.createElement('li');
+        li.className = 'list-group-item pdf-widget';
+        li.dataset.widgetId = widget.id;
+        li.innerHTML = `
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-bold">${widget.name}</span>
+                <button type="button" class="btn btn-sm btn-outline-danger" onclick="this.parentElement.parentElement.remove()">&times;</button>
+            </div>
+            <input type="text" class="form-control form-control-sm mt-2" value="${customTitle}" placeholder="Enter custom title (optional)">
+        `;
+        reportLayoutList.appendChild(li);
+    }
+
+    function renderPdfLayout(pdfConfig) {
+        reportLayoutList.innerHTML = '';
+        pdfReportTitleInput.value = pdfConfig?.reportTitle || '';
+        if (pdfConfig?.sections?.length > 0) {
+            pdfConfig.sections.forEach(section => {
+                const baseWidget = availablePdfWidgets.find(w => w.id === section.id);
+                if (baseWidget) {
+                    addWidgetToLayout(baseWidget, section.title);
+                }
+            });
+        } else {
+            reportLayoutList.innerHTML = '<li class="list-group-item text-muted">Add widgets from the left.</li>';
+        }
+    }
+
+    function serializePdfLayout() {
+        const sections = Array.from(reportLayoutList.querySelectorAll('.pdf-widget')).map(li => {
+            const widgetId = li.dataset.widgetId;
+            const baseWidget = availablePdfWidgets.find(w => w.id === widgetId);
+            const customTitle = li.querySelector('input').value.trim();
+            return {
+                id: widgetId,
+                type: baseWidget.type,
+                title: customTitle || baseWidget.name, // Use custom title, or default to widget name
+                dataSource: baseWidget.dataSource,
+                columns: baseWidget.columns
+            };
+        });
+        return {
+            reportTitle: pdfReportTitleInput.value.trim() || '{clientName} Daily Summary Report {date}',
+            sections
+        };
+    }
+
     // --- CORE DATA LOADING ---
     async function loadConfigurations() {
         try {
@@ -237,34 +306,9 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { console.error('Error loading configurations:', error); }
     }
     
-    async function loadTeams() {
-        try {
-            const response = await fetch(TEAMS_API);
-            allTeams = await response.json();
-            renderTeamList();
-            populateTeamDropdown();
-        } catch (error) { console.error("Failed to load teams:", error); }
-    }
-    
-    async function loadCategories() {
-        try {
-            const response = await fetch(CATEGORIES_API);
-            allCategories = await response.json();
-            renderCategoryList();
-        } catch (error) { console.error("Failed to load categories:", error); }
-    }
-
-    async function loadRules() {
-        try {
-            const [editRes, noteRes] = await Promise.all([ fetch(`${RULES_API}?type=edit`), fetch(`${RULES_API}?type=note`) ]);
-            const editRulesData = await editRes.json();
-            const noteRulesData = await noteRes.json();
-            existingEditRules = new Map(editRulesData.map(r => [r.text, { category_id: r.category_id, category_name: r.category_name, team_name: r.team_name }]));
-            existingNoteRules = new Map(noteRulesData.map(r => [r.text, { category_id: r.category_id, category_name: r.category_name, team_name: r.team_name }]));
-            renderExistingRulesTables();
-        } catch (error) { console.error("Failed to load existing rules:", error); }
-    }
-    
+    async function loadTeams() { try { const response = await fetch(TEAMS_API); allTeams = await response.json(); renderTeamList(); populateTeamDropdown(); } catch (error) { console.error("Failed to load teams:", error); } }
+    async function loadCategories() { try { const response = await fetch(CATEGORIES_API); allCategories = await response.json(); renderCategoryList(); } catch (error) { console.error("Failed to load categories:", error); } }
+    async function loadRules() { try { const [editRes, noteRes] = await Promise.all([ fetch(`${RULES_API}?type=edit`), fetch(`${RULES_API}?type=note`) ]); const editRulesData = await editRes.json(); const noteRulesData = await noteRes.json(); existingEditRules = new Map(editRulesData.map(r => [r.text, { category_id: r.category_id, category_name: r.category_name, team_name: r.team_name }])); existingNoteRules = new Map(noteRulesData.map(r => [r.text, { category_id: r.category_id, category_name: r.category_name, team_name: r.team_name }])); renderExistingRulesTables(); } catch (error) { console.error("Failed to load existing rules:", error); } }
     async function loadAllData() { await Promise.all([loadTeams(), loadCategories(), loadRules(), loadConfigurations()]); }
 
     // --- CLIENT CONFIGURATION LOGIC ---
@@ -282,6 +326,9 @@ document.addEventListener('DOMContentLoaded', () => {
         mappingAlert.textContent = 'Upload a file to view or change the column mappings for this configuration.';
         mappingAlert.classList.remove('d-none');
         mappingHeader.innerHTML = 'Map Your Fields to Detected Headers:';
+
+        // Render PDF layout
+        renderPdfLayout(config.config_data.pdfConfig);
     }
 
     function renderMappingUI() {
@@ -299,7 +346,6 @@ document.addEventListener('DOMContentLoaded', () => {
             select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
             
             let bestGuess = '';
-            // Attempt to auto-select based on saved mapping or direct name match
             const savedMapping = mappingsForEditing[field.key];
             if (savedMapping && detectedHeaders.includes(savedMapping)) {
                 bestGuess = savedMapping;
@@ -311,9 +357,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             detectedHeaders.forEach(header => {
                 const option = new Option(header, header);
-                if (header === bestGuess) {
-                    option.selected = true;
-                }
+                if (header === bestGuess) option.selected = true;
                 select.add(option);
             });
             cell2.appendChild(select);
@@ -332,268 +376,47 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function downloadConfigAsXLSX(config) {
         const wb = XLSX.utils.book_new();
-
-        // Create Summary Sheet
-        const summaryData = [
-            { Key: 'Configuration Name', Value: config.config_name },
-            { Key: 'Client Name (for PDF)', Value: config.config_data.clientName || 'Not Set' }
-        ];
+        const summaryData = [ { Key: 'Configuration Name', Value: config.config_name }, { Key: 'Client Name (for PDF)', Value: config.config_data.clientName || 'Not Set' } ];
         const wsSummary = XLSX.utils.json_to_sheet(summaryData, { skipHeader: true });
         XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary');
-
-        // Create Mappings Sheet
-        const mappingData = standardFields.map(field => ({
-            'Standard Field': field.displayName,
-            'Required': field.required ? 'Yes' : 'No',
-            'Mapped Client Header': config.config_data.columnMappings[field.key] || '--- NOT MAPPED ---'
-        }));
+        const mappingData = standardFields.map(field => ({ 'Standard Field': field.displayName, 'Required': field.required ? 'Yes' : 'No', 'Mapped Client Header': config.config_data.columnMappings[field.key] || '--- NOT MAPPED ---' }));
         const wsMappings = XLSX.utils.json_to_sheet(mappingData);
         XLSX.utils.book_append_sheet(wb, wsMappings, 'Column Mappings');
-
-        // Auto-size columns for better readability
         wsSummary['!cols'] = [{ wch: 25 }, { wch: 50 }];
         wsMappings['!cols'] = [{ wch: 25 }, { wch: 10 }, { wch: 50 }];
-
         const fileName = `Config_${config.config_name.replace(/ /g, '_')}.xlsx`;
         XLSX.writeFile(wb, fileName);
     }
     
-    // --- TEAM & CATEGORY LOGIC ---
-    function renderTeamList() {
-        teamList.innerHTML = allTeams.length ? '' : '<li class="list-group-item">No teams defined.</li>';
-        allTeams.forEach(team => {
-            const li = document.createElement('li');
-            li.className = 'list-group-item py-1 d-flex justify-content-between align-items-center';
-            li.textContent = team.team_name;
-            const deleteBtn = document.createElement('button');
-            deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 btn-delete-rule';
-            deleteBtn.innerHTML = '&times;';
-            deleteBtn.onclick = () => deleteTeam(team.id);
-            li.appendChild(deleteBtn);
-            teamList.appendChild(li);
-        });
-    }
-
-    function populateTeamDropdown() {
-        teamCategorySelect.innerHTML = '<option value="">Select a team to add to...</option>';
-        allTeams.sort((a, b) => a.team_name.localeCompare(b.team_name)).forEach(team => teamCategorySelect.add(new Option(team.team_name, team.id)));
-    }
+    // --- TEAM & CATEGORY LOGIC (abbreviated, no changes) ---
+    function renderTeamList() { teamList.innerHTML = allTeams.length ? '' : '<li class="list-group-item">No teams defined.</li>'; allTeams.forEach(team => { const li = document.createElement('li'); li.className = 'list-group-item py-1 d-flex justify-content-between align-items-center'; li.textContent = team.team_name; const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 btn-delete-rule'; deleteBtn.innerHTML = '&times;'; deleteBtn.onclick = () => deleteTeam(team.id); li.appendChild(deleteBtn); teamList.appendChild(li); }); }
+    function populateTeamDropdown() { teamCategorySelect.innerHTML = '<option value="">Select a team to add to...</option>'; allTeams.sort((a, b) => a.team_name.localeCompare(b.team_name)).forEach(team => teamCategorySelect.add(new Option(team.team_name, team.id))); }
+    async function deleteTeam(id) { if (!confirm('Are you sure? This will unassign categories from this team.')) return; try { await fetch(`${TEAMS_API}?id=${id}`, { method: 'DELETE' }); await loadAllData(); } catch (error) { alert('Failed to delete team.'); } }
+    function renderCategoryList() { categoryListContainer.innerHTML = ''; const grouped = allCategories.reduce((acc, cat) => { const teamName = cat.team_name || 'Unassigned'; if (!acc[teamName]) acc[teamName] = []; acc[teamName].push(cat); return acc; }, {}); Object.keys(grouped).sort().forEach(teamName => { const card = document.createElement('div'); card.className = 'card mb-2'; card.innerHTML = `<div class="card-header py-1">${teamName}</div>`; const list = document.createElement('ul'); list.className = 'list-group list-group-flush'; grouped[teamName].sort((a,b) => a.category_name.localeCompare(b.category_name)).forEach(cat => { const li = document.createElement('li'); li.className = 'list-group-item py-1 d-flex justify-content-between align-items-center'; li.textContent = cat.category_name; const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 btn-delete-rule'; deleteBtn.innerHTML = '&times;'; deleteBtn.onclick = () => deleteCategory(cat.id); li.appendChild(deleteBtn); list.appendChild(li); }); card.appendChild(list); categoryListContainer.appendChild(card); }); }
+    async function deleteCategory(id) { if (!confirm('Are you sure? This also deletes associated rules.')) return; try { const response = await fetch(`${CATEGORIES_API}?id=${id}`, { method: 'DELETE' }); if (!response.ok) throw new Error('Delete failed'); const index = allCategories.findIndex(cat => cat.id === id); if (index > -1) allCategories.splice(index, 1); renderCategoryList(); removeOptionFromAllDropdowns(id); await loadRules(); } catch (error) { alert('Failed to delete category.'); } }
     
-    async function deleteTeam(id) {
-        if (!confirm('Are you sure? This will unassign categories from this team.')) return;
-        try {
-            await fetch(`${TEAMS_API}?id=${id}`, { method: 'DELETE' });
-            await loadAllData();
-        } catch (error) { alert('Failed to delete team.'); }
-    }
+    // --- RULE MANAGEMENT LOGIC (abbreviated, no changes) ---
+    function processUploadedReport(data) { const detectedEdits = new Set(), detectedNotes = new Set(); const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization; data.forEach(row => { const editValue = (row[editColumn] || '').toString().trim(); if (editValue && !existingEditRules.has(editValue)) detectedEdits.add(editValue); const noteValue = (row[notesColumn] || '').toString().trim(); if (noteValue && !existingNoteRules.has(noteValue)) detectedNotes.add(noteValue); }); const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b)); const sortedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b)); uncategorizedEditsTable.innerHTML = ''; sortedEdits.forEach(text => { const row = uncategorizedEditsTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`; row.cells[0].firstChild.dataset.text = text; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; }); uncategorizedNotesTable.innerHTML = ''; sortedNotes.forEach(noteText => { const row = uncategorizedNotesTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`; row.cells[0].firstChild.dataset.text = noteText; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; }); const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0; rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none'; noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file.'; noRulesFoundDiv.style.display = hasRules ? 'none' : 'block'; }
+    function createCategoryDropdown(selectedId = '') { const select = document.createElement('select'); select.className = 'form-select form-select-sm'; select.add(new Option('Select category...', '')); allCategories.sort((a,b) => (a.team_name || '').localeCompare(b.team_name || '') || a.category_name.localeCompare(b.category_name)) .forEach(cat => select.add(new Option(`${cat.team_name} -> ${cat.category_name}`, cat.id))); if (selectedId) select.value = selectedId; return select; }
+    function addOptionToAllDropdowns(newCategory) { document.querySelectorAll('select.form-select-sm').forEach(select => { select.add(new Option(`${newCategory.team_name} -> ${newCategory.category_name}`, newCategory.id)); Array.from(select.options) .sort((a, b) => (a.value === "") ? -1 : (b.value === "") ? 1 : a.text.localeCompare(b.text)) .forEach(option => select.add(option)); }); }
+    function removeOptionFromAllDropdowns(categoryId) { document.querySelectorAll('select.form-select-sm').forEach(select => { const optionToRemove = select.querySelector(`option[value="${categoryId}"]`); if (optionToRemove) optionToRemove.remove(); }); }
+    async function saveNewRules() { const getRulesFromTable = (table) => Array.from(table.rows).map(row => ({ row: row, text: row.querySelector('.rule-text').dataset.text, category_id: row.cells[1].querySelector('select').value })).filter(rule => rule.category_id); const editRulesToSave = getRulesFromTable(uncategorizedEditsTable); const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable); if (editRulesToSave.length === 0 && noteRulesToSave.length === 0) return alert('No new rules were assigned to a category.'); try { const bodyEdit = JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest)); const bodyNote = JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest)); await Promise.all([ editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: bodyEdit }) : Promise.resolve(), noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: bodyNote }) : Promise.resolve() ]); alert('Rules saved successfully!'); editRulesToSave.forEach(rule => rule.row.remove()); noteRulesToSave.forEach(rule => rule.row.remove()); await loadRules(); if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) { rulesAssignmentContainer.style.display = 'none'; noRulesFoundDiv.textContent = 'Upload a file to begin.'; noRulesFoundDiv.style.display = 'block'; } } catch (error) { alert(`Failed to save rules: ${error.message}`); } }
+    function renderExistingRulesTables() { existingEditsTableBody.innerHTML = ''; Array.from(existingEditRules.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([text, rule]) => { const row = existingEditsTableBody.insertRow(); row.dataset.text = text; row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`; row.insertCell().innerHTML = createCategoryDropdown(rule.category_id).outerHTML; row.insertCell().innerHTML = `<button class="btn btn-danger btn-sm py-0 px-1 btn-delete-rule" data-type="edit" data-text="${encodeURIComponent(text)}">&times;</button>`; }); existingNotesTableBody.innerHTML = ''; Array.from(existingNoteRules.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([text, rule]) => { const row = existingNotesTableBody.insertRow(); row.dataset.text = text; row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`; row.insertCell().innerHTML = createCategoryDropdown(rule.category_id).outerHTML; row.insertCell().innerHTML = `<button class="btn btn-danger btn-sm py-0 px-1 btn-delete-rule" data-type="note" data-text="${encodeURIComponent(text)}">&times;</button>`; }); }
+    async function deleteRule(type, text) { if (!confirm(`Are you sure you want to delete this rule?\n\nTYPE: ${type}\nRULE: ${text}`)) return; try { const response = await fetch(`${RULES_API}?type=${type}`, { method: 'DELETE', body: JSON.stringify({ text }) }); if (!response.ok) throw new Error('Delete failed on server.'); const tableBody = type === 'edit' ? existingEditsTableBody : existingNotesTableBody; tableBody.querySelector(`tr[data-text="${text}"]`)?.remove(); const stateMap = type === 'edit' ? existingEditRules : existingNoteRules; stateMap.delete(text); alert('Rule deleted.'); } catch(error) { alert(`Error deleting rule: ${error.message}`); } };
+    async function saveExistingRuleChanges() { const getChangedRules = (tableBody) => Array.from(tableBody.rows).map(row => ({ text: row.dataset.text, category_id: row.querySelector('select').value })).filter(rule => rule.category_id); const editRulesToUpdate = getChangedRules(existingEditsTableBody); const noteRulesToUpdate = getChangedRules(existingNotesTableBody); try { await Promise.all([ editRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: JSON.stringify(editRulesToUpdate) }) : Promise.resolve(), noteRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: JSON.stringify(noteRulesToUpdate) }) : Promise.resolve() ]); alert('Existing rule changes saved successfully!'); await loadRules(); } catch(error) { alert(`Error saving changes: ${error.message}`); } }
     
-    function renderCategoryList() {
-        categoryListContainer.innerHTML = '';
-        const grouped = allCategories.reduce((acc, cat) => {
-            const teamName = cat.team_name || 'Unassigned';
-            if (!acc[teamName]) acc[teamName] = [];
-            acc[teamName].push(cat);
-            return acc;
-        }, {});
-        Object.keys(grouped).sort().forEach(teamName => {
-            const card = document.createElement('div');
-            card.className = 'card mb-2';
-            card.innerHTML = `<div class="card-header py-1">${teamName}</div>`;
-            const list = document.createElement('ul');
-            list.className = 'list-group list-group-flush';
-            grouped[teamName].sort((a,b) => a.category_name.localeCompare(b.category_name)).forEach(cat => {
-                const li = document.createElement('li');
-                li.className = 'list-group-item py-1 d-flex justify-content-between align-items-center';
-                li.textContent = cat.category_name;
-                const deleteBtn = document.createElement('button');
-                deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 btn-delete-rule';
-                deleteBtn.innerHTML = '&times;';
-                deleteBtn.onclick = () => deleteCategory(cat.id);
-                li.appendChild(deleteBtn);
-                list.appendChild(li);
-            });
-            card.appendChild(list);
-            categoryListContainer.appendChild(card);
-        });
-    }
-
-    async function deleteCategory(id) {
-        if (!confirm('Are you sure? This also deletes associated rules.')) return;
-        try {
-            const response = await fetch(`${CATEGORIES_API}?id=${id}`, { method: 'DELETE' });
-            if (!response.ok) throw new Error('Delete failed');
-            const index = allCategories.findIndex(cat => cat.id === id);
-            if (index > -1) allCategories.splice(index, 1);
-            renderCategoryList();
-            removeOptionFromAllDropdowns(id);
-            await loadRules();
-        } catch (error) { alert('Failed to delete category.'); }
-    }
-
-    // --- RULE MANAGEMENT LOGIC ---
-    function processUploadedReport(data) {
-        const detectedEdits = new Set(), detectedNotes = new Set();
-        const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization;
-        data.forEach(row => {
-            const editValue = (row[editColumn] || '').toString().trim();
-            if (editValue && !existingEditRules.has(editValue)) detectedEdits.add(editValue);
-            const noteValue = (row[notesColumn] || '').toString().trim();
-            if (noteValue && !existingNoteRules.has(noteValue)) detectedNotes.add(noteValue);
-        });
-        const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b));
-        const sortedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b));
-        
-        uncategorizedEditsTable.innerHTML = '';
-        sortedEdits.forEach(text => {
-            const row = uncategorizedEditsTable.insertRow();
-            row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`;
-            row.cells[0].firstChild.dataset.text = text;
-            row.insertCell().innerHTML = createCategoryDropdown().outerHTML;
-        });
-
-        uncategorizedNotesTable.innerHTML = '';
-        sortedNotes.forEach(noteText => {
-            const row = uncategorizedNotesTable.insertRow();
-            row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`;
-            row.cells[0].firstChild.dataset.text = noteText;
-            row.insertCell().innerHTML = createCategoryDropdown().outerHTML;
-        });
-        
-        const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0;
-        rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none';
-        noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file.';
-        noRulesFoundDiv.style.display = hasRules ? 'none' : 'block';
-    }
-    
-    function createCategoryDropdown(selectedId = '') {
-        const select = document.createElement('select');
-        select.className = 'form-select form-select-sm';
-        select.add(new Option('Select category...', ''));
-        allCategories.sort((a,b) => (a.team_name || '').localeCompare(b.team_name || '') || a.category_name.localeCompare(b.category_name))
-            .forEach(cat => select.add(new Option(`${cat.team_name} -> ${cat.category_name}`, cat.id)));
-        if (selectedId) select.value = selectedId;
-        return select;
-    }
-
-    function addOptionToAllDropdowns(newCategory) {
-        document.querySelectorAll('select.form-select-sm').forEach(select => {
-            select.add(new Option(`${newCategory.team_name} -> ${newCategory.category_name}`, newCategory.id));
-            Array.from(select.options)
-                .sort((a, b) => (a.value === "") ? -1 : (b.value === "") ? 1 : a.text.localeCompare(b.text))
-                .forEach(option => select.add(option));
-        });
-    }
-
-    function removeOptionFromAllDropdowns(categoryId) {
-        document.querySelectorAll('select.form-select-sm').forEach(select => {
-            const optionToRemove = select.querySelector(`option[value="${categoryId}"]`);
-            if (optionToRemove) optionToRemove.remove();
-        });
-    }
-    
-    async function saveNewRules() {
-        const getRulesFromTable = (table) => Array.from(table.rows).map(row => ({
-            row: row,
-            text: row.querySelector('.rule-text').dataset.text,
-            category_id: row.cells[1].querySelector('select').value
-        })).filter(rule => rule.category_id);
-
-        const editRulesToSave = getRulesFromTable(uncategorizedEditsTable);
-        const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable);
-
-        if (editRulesToSave.length === 0 && noteRulesToSave.length === 0) return alert('No new rules were assigned to a category.');
-
-        try {
-            const bodyEdit = JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest));
-            const bodyNote = JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest));
-
-            await Promise.all([
-                editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: bodyEdit }) : Promise.resolve(),
-                noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: bodyNote }) : Promise.resolve()
-            ]);
-            
-            alert('Rules saved successfully!');
-            editRulesToSave.forEach(rule => rule.row.remove());
-            noteRulesToSave.forEach(rule => rule.row.remove());
-            
-            await loadRules();
-            
-            if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) {
-                rulesAssignmentContainer.style.display = 'none';
-                noRulesFoundDiv.textContent = 'Upload a file to begin.';
-                noRulesFoundDiv.style.display = 'block';
-            }
-        } catch (error) { alert(`Failed to save rules: ${error.message}`); }
-    }
-    
-    function renderExistingRulesTables() {
-        existingEditsTableBody.innerHTML = '';
-        Array.from(existingEditRules.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([text, rule]) => {
-            const row = existingEditsTableBody.insertRow();
-            row.dataset.text = text;
-            row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`;
-            row.insertCell().innerHTML = createCategoryDropdown(rule.category_id).outerHTML;
-            row.insertCell().innerHTML = `<button class="btn btn-danger btn-sm py-0 px-1 btn-delete-rule" data-type="edit" data-text="${encodeURIComponent(text)}">&times;</button>`;
-        });
-
-        existingNotesTableBody.innerHTML = '';
-        Array.from(existingNoteRules.entries()).sort((a, b) => a[0].localeCompare(b[0])).forEach(([text, rule]) => {
-            const row = existingNotesTableBody.insertRow();
-            row.dataset.text = text;
-            row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`;
-            row.insertCell().innerHTML = createCategoryDropdown(rule.category_id).outerHTML;
-            row.insertCell().innerHTML = `<button class="btn btn-danger btn-sm py-0 px-1 btn-delete-rule" data-type="note" data-text="${encodeURIComponent(text)}">&times;</button>`;
-        });
-    }
-
-    async function deleteRule(type, text) {
-        if (!confirm(`Are you sure you want to delete this rule?\n\nTYPE: ${type}\nRULE: ${text}`)) return;
-        try {
-            const response = await fetch(`${RULES_API}?type=${type}`, { method: 'DELETE', body: JSON.stringify({ text }) });
-            if (!response.ok) throw new Error('Delete failed on server.');
-            const tableBody = type === 'edit' ? existingEditsTableBody : existingNotesTableBody;
-            tableBody.querySelector(`tr[data-text="${text}"]`)?.remove();
-            const stateMap = type === 'edit' ? existingEditRules : existingNoteRules;
-            stateMap.delete(text);
-            alert('Rule deleted.');
-        } catch(error) { alert(`Error deleting rule: ${error.message}`); }
-    };
-    
-    async function saveExistingRuleChanges() {
-        const getChangedRules = (tableBody) => Array.from(tableBody.rows).map(row => ({
-            text: row.dataset.text, category_id: row.querySelector('select').value
-        })).filter(rule => rule.category_id);
-
-        const editRulesToUpdate = getChangedRules(existingEditsTableBody);
-        const noteRulesToUpdate = getChangedRules(existingNotesTableBody);
-        
-        try {
-            await Promise.all([
-                editRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: JSON.stringify(editRulesToUpdate) }) : Promise.resolve(),
-                noteRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: JSON.stringify(noteRulesToUpdate) }) : Promise.resolve()
-            ]);
-            alert('Existing rule changes saved successfully!');
-            await loadRules();
-        } catch(error) { alert(`Error saving changes: ${error.message}`); }
-    }
-
     function clearConfigForm() {
         configForm.reset();
         mappingSection.style.display = 'none';
         mappingAlert.classList.add('d-none');
         mappingsForEditing = {};
         reportUploader.value = '';
+        renderPdfLayout({}); // Clear the PDF builder UI
     }
 
     // --- EVENT LISTENERS ---
-    configList.addEventListener('click', (e) => {
-        if (e.target.classList.contains('config-name')) {
-            e.preventDefault();
-            const configId = parseInt(e.target.dataset.configId, 10);
-            editConfig(configId);
-        }
-    });
-    configForm.addEventListener('submit', async (e) => { e.preventDefault(); const columnMappings = {}; mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; }); const id = configIdInput.value; const config_data = { clientName: clientNameInput.value, columnMappings }; const method = id ? 'PUT' : 'POST'; const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API; try { await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) }); alert(`Configuration ${id ? 'updated' : 'created'}!`); clearConfigForm(); await loadConfigurations(); } catch (error) { alert('Failed to save configuration.'); } });
+    configList.addEventListener('click', (e) => { if (e.target.classList.contains('config-name')) { e.preventDefault(); const configId = parseInt(e.target.dataset.configId, 10); editConfig(configId); } });
+    configForm.addEventListener('submit', async (e) => { e.preventDefault(); const columnMappings = {}; mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; }); const id = configIdInput.value; const pdfConfig = serializePdfLayout(); const config_data = { clientName: clientNameInput.value, columnMappings, pdfConfig }; const method = id ? 'PUT' : 'POST'; const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API; try { await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) }); alert(`Configuration ${id ? 'updated' : 'created'}!`); clearConfigForm(); await loadConfigurations(); } catch (error) { alert('Failed to save configuration.'); } });
     reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const sheet = workbook.Sheets[workbook.SheetNames[0]]; if (!sheet) throw new Error("Sheet not found."); const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }); detectedHeaders = (json[0] || []).filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file. Please ensure the first row contains the column names."); return; } renderMappingUI(); } catch (err) { alert(`Error processing file: ${err.message}`); console.error(err); } }; reader.readAsArrayBuffer(file); });
     clearBtn.addEventListener('click', clearConfigForm);
     newTeamForm.addEventListener('submit', async (e) => { e.preventDefault(); const name = newTeamNameInput.value.trim(); if (!name) return; try { await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) }); newTeamNameInput.value = ''; await loadTeams(); } catch (error) { alert('Failed to add team. It may already exist.'); } });
@@ -602,16 +425,11 @@ document.addEventListener('DOMContentLoaded', () => {
     categorizationReportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const dataJson = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]); processUploadedReport(dataJson); }; reader.readAsArrayBuffer(file); });
     document.querySelectorAll('.save-rules-btn').forEach(btn => btn.addEventListener('click', saveNewRules));
     saveExistingChangesBtn.addEventListener('click', saveExistingRuleChanges);
-    document.getElementById('manage-pane').addEventListener('click', (e) => {
-        if (e.target.classList.contains('btn-delete-rule')) {
-            const type = e.target.dataset.type;
-            const text = decodeURIComponent(e.target.dataset.text);
-            deleteRule(type, text);
-        }
-    });
+    document.getElementById('manage-pane').addEventListener('click', (e) => { if (e.target.classList.contains('btn-delete-rule')) { const type = e.target.dataset.type; const text = decodeURIComponent(e.target.dataset.text); deleteRule(type, text); } });
 
     // --- INITIAL PAGE LOAD ---
     loadAllData();
+    initializePdfBuilder();
 });
 </script>
 </body>
