@@ -697,10 +697,9 @@
             };
 
             // --- RENDER PDF HEADER ---
-            const logoImg = document.getElementById('logoImage');
-            // --- FIX: Pass the image ELEMENT, not the .src string ---
-            pdf.addImage(logoImg, 'PNG', margin, currentY, 84, 24);
-            currentY += 40;
+            // const logoImg = document.getElementById('logoImage');
+            // pdf.addImage(logoImg, 'PNG', margin, currentY, 84, 24);
+            // currentY += 40;
             addMainTitle(pdfTitle);
 
             // --- RENDER DYNAMIC SECTIONS ---
