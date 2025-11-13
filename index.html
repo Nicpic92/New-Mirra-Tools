@@ -51,16 +51,9 @@
             <a href="/admin.html" class="btn btn-outline-primary">Go to Admin Console</a>
         </header>
 
-        <!-- File Input Section -->
-        <div class="card p-3 mb-4 bg-light border-0">
-            <h5 class="card-title fw-bold">1. Upload Claims Data</h5>
-            <label for="reportFile" class="form-label">Select an XLSX or CSV file to begin analysis.</label>
-            <input class="form-control" type="file" id="reportFile" accept=".xlsx, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
-        </div>
-
         <div id="dashboardOptions">
             <div class="pdf-options card p-3 mb-4">
-                <h5 class="card-title fw-bold">2. Report Options</h5>
+                <h5 class="card-title fw-bold">1. Report Options</h5>
                 <div class="row align-items-end">
                     <div class="col-md-6 mb-3">
                         <label for="configSelector" class="form-label small fw-bold">Select Report Configuration</label>
@@ -74,6 +67,13 @@
                     </div>
                 </div>
             </div>
+        </div>
+
+        <!-- File Input Section -->
+        <div class="card p-3 mb-4 bg-light border-0">
+            <h5 class="card-title fw-bold">2. Upload Claims Data</h5>
+            <label for="reportFile" class="form-label">Select an XLSX or CSV file to begin analysis.</label>
+            <input class="form-control" type="file" id="reportFile" accept=".xlsx, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
         </div>
         
         <div id="dashboardContent" style="display: none;">
@@ -105,25 +105,6 @@
                         <h2 class="h4 text-muted mb-4" style="font-weight: 300;">Executive Summary</h2>
                         <div class="row g-4 mb-5" id="executive-summary-cards"></div>
                     </div>
-                    
-                    <div id="workflow-network-section" class="dashboard-section">
-                        <div class="section-header"><h2 class="h5">Workflow & Network Analysis</h2></div>
-                        <div class="row g-4 mb-5">
-                            <div class="col-lg-4 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Claims Volume by Final Status</h6><canvas id="statusChart"></canvas></div></div>
-                            <div class="col-lg-4 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Claims Volume by Workflow State</h6><canvas id="stateChart"></canvas></div></div>
-                            <div class="col-lg-4 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">In-Network vs. Out-of-Network</h6><canvas id="networkChart"></canvas></div></div>
-                        </div>
-                    </div>
-                    
-                    <div id="root-cause-section" class="dashboard-section">
-                         <div class="section-header"><h2 class="h5">Root Cause Analysis</h2></div>
-                         <div class="row g-4 mb-5">
-                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Claim Edits</h6><canvas id="editsChart"></canvas></div></div>
-                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Billing Providers (Overall)</h6><canvas id="providerOverallChart"></canvas></div></div>
-                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Billing Providers (On Hold)</h6><canvas id="providerOnHoldChart"></canvas></div></div>
-                            <div class="col-lg-3 col-md-6"><div class="chart-container"><h6 class="text-center text-dark">Top 10 Billing Providers (Mgmt Review)</h6><canvas id="providerMgmtReviewChart"></canvas></div></div>
-                        </div>
-                    </div>
                 </div>
 
                 <!-- Work Queue Pane -->
@@ -143,6 +124,9 @@
                                     <th data-sort="category">Category</th>
                                     <th data-sort="source">Source</th>
                                     <th data-sort="teamName">Assigned Team</th>
+                                    <th>Prov Ops Team Mbr</th>
+                                    <th>PV Updated (Y/N)</th>
+                                    <th>Notes</th>
                                     <th data-sort="claimId">Claim ID</th>
                                     <th data-sort="age">Age (Days)</th>
                                     <th data-sort="netPayment">Amount at Risk</th>
@@ -208,10 +192,10 @@
             }
             
             const totalCharges = parseFloat(getVal(claim, 'totalCharges') || 0);
-            if (totalCharges > 50000) return { category: 'On Hold: High Dollar Review', source: 'Fallback', teamName: 'High Dollar Review Team' };
-            if (notes.includes('duplicate') || (edit || '').toLowerCase().includes('duplicate')) return { category: 'On Hold: Duplicate', source: 'Fallback', teamName: 'Onshore' };
+            if (totalCharges > 50000) return { category: 'On Hold: High Dollar Review', source: 'Fallback', teamName: 'Needs Assignment' };
+            if (notes.includes('duplicate') || (edit || '').toLowerCase().includes('duplicate')) return { category: 'On Hold: Duplicate', source: 'Fallback', teamName: 'Needs Assignment' };
             
-            return { category: 'Needs Triage', source: 'Default', teamName: 'Onshore' };
+            return { category: 'Needs Triage', source: 'Default', teamName: 'Needs Assignment' };
         }
 
         // --- CONFIGURATION & EVENT LISTENERS ---
@@ -333,7 +317,7 @@
                 if (processedClaim.state === 'ONHOLD') metrics.providerCounts.onhold[processedClaim.providerName] = (metrics.providerCounts.onhold[processedClaim.providerName] || 0) + 1;
                 if (processedClaim.state === 'MANAGEMENTREVIEW') metrics.providerCounts.mgmtreview[processedClaim.providerName] = (metrics.providerCounts.mgmtreview[processedClaim.providerName] || 0) + 1;
 
-                processedClaim.isActionable = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'].includes(processedClaim.state) || processedClaim.status === 'DENY';
+                processedClaim.isActionable = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'].includes(processedClaim.state);
 
                 if (processedClaim.isActionable) {
                     const categoryInfo = getClaimCategory(rawClaim);
@@ -374,16 +358,6 @@
             const fCur = (num) => num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
             document.getElementById('executive-summary-cards').innerHTML = `<div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #0d6efd;"><div class="metric-label">TOTAL CLAIMS</div><div class="metric-value">${fNum(metrics.totalClaims)}</div></div></div><div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #198754;"><div class="metric-label">TOTAL NET PAYMENT (PENDING)</div><div class="metric-value">${fCur(metrics.totalNetPayment)}</div></div></div><div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #ffc107;"><div class="metric-label">CLAIMS PEND STATUS</div><div class="metric-value">${fNum(metrics.claimsPend)}</div></div></div><div class="col-md-6 col-lg-4 mb-4"><div class="card dashboard-card h-100" style="border-left-color: #dc3545;"><div class="metric-label">CLAIMS DENIED</div><div class="metric-value">${fNum(metrics.claimsDenied)}</div></div></div>`;
             Object.values(myCharts).forEach(chart => chart.destroy());
-            const doughnutOpts = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } };
-            const barOpts = { responsive: true, maintainAspectRatio: false, indexAxis: 'y', plugins: { legend: { display: false } } };
-            const createChart = (id, type, data, options) => new Chart(document.getElementById(id), { type, data, options });
-            myCharts.statusChart = createChart('statusChart', 'doughnut', { labels: Object.keys(metrics.claimsByStatus), datasets: [{ data: Object.values(metrics.claimsByStatus) }] }, doughnutOpts);
-            myCharts.stateChart = createChart('stateChart', 'doughnut', { labels: Object.keys(metrics.claimsByState), datasets: [{ data: Object.values(metrics.claimsByState) }] }, doughnutOpts);
-            myCharts.networkChart = createChart('networkChart', 'doughnut', { labels: Object.keys(metrics.claimsByNetwork), datasets: [{ data: Object.values(metrics.claimsByNetwork) }] }, doughnutOpts);
-            myCharts.editsChart = createChart('editsChart', 'bar', { labels: metrics.topEdits.labels, datasets: [{ data: metrics.topEdits.data, backgroundColor: '#465a6c' }] }, barOpts);
-            myCharts.providerOverallChart = createChart('providerOverallChart', 'bar', { labels: metrics.topProvidersOverall.labels, datasets: [{ data: metrics.topProvidersOverall.data, backgroundColor: '#007bff' }] }, barOpts);
-            myCharts.providerOnHoldChart = createChart('providerOnHoldChart', 'bar', { labels: metrics.topProvidersOnHold.labels, datasets: [{ data: metrics.topProvidersOnHold.data, backgroundColor: '#ffc107' }] }, barOpts);
-            myCharts.providerMgmtReviewChart = createChart('providerMgmtReviewChart', 'bar', { labels: metrics.topProvidersMgmtReview.labels, datasets: [{ data: metrics.topProvidersMgmtReview.data, backgroundColor: '#dc3545' }] }, barOpts);
             populateTeamDownloadButtons(claims);
         }
 
@@ -422,6 +396,9 @@
                     <td>${claim.category || 'N/A'}</td>
                     <td>${claim.source || 'N/A'}</td>
                     <td>${claim.teamName || 'N/A'}</td>
+                    <td></td>
+                    <td></td>
+                    <td></td>
                     <td>${claim.claimId || 'N/A'}</td>
                     <td>${claim.age || 0}</td>
                     <td>$${(claim.netPayment || 0).toFixed(2)}</td>
@@ -463,7 +440,10 @@
                     'Priority Score': claim.priorityScore,
                     'Assigned Team': claim.teamName,
                     'Category': claim.category,
-                    'Categorization Source': claim.source
+                    'Categorization Source': claim.source,
+                    'Prov Ops Team Mbr': '',
+                    'PV Updated (Y/N)': '',
+                    'Notes': ''
                 });
                 return acc;
             }, {});
@@ -519,15 +499,6 @@
                 pdf.text(title, margin, currentHeight);
                 currentHeight += 25;
             };
-            const addTableToPdf = (title, tableConfig) => {
-                let rowCount = tableConfig.body ? tableConfig.body.length : 0;
-                if (currentHeight + 45 + (rowCount * 15) > pageHeight - margin) { pdf.addPage(); currentHeight = margin; }
-                pdf.setFont('helvetica', 'bold');
-                pdf.setFontSize(14);
-                pdf.text(title, margin, currentHeight);
-                pdf.autoTable({ ...tableConfig, startY: currentHeight + 15, theme: 'grid', headStyles: { fillColor: [70, 90, 108] } });
-                currentHeight = pdf.autoTable.previous.finalY + 25;
-            };
 
             addMainTitle(pdfTitle);
             addSectionHeader('Executive Summary');
@@ -537,15 +508,6 @@
             if (currentHeight + imgHeight > pageHeight - margin) { pdf.addPage(); currentHeight = margin; }
             pdf.addImage(canvas.toDataURL('image/png'), 'PNG', margin, currentHeight, imgWidth, imgHeight);
             currentHeight += imgHeight + 20;
-
-            pdf.addPage(); currentHeight = margin;
-            addSectionHeader('Workflow & Root Cause Analysis');
-            const toTableData = (obj) => Object.entries(obj).map(([k,v]) => [k,v]);
-            const toTop10Data = (top10) => top10.labels.map((l, i) => [l, top10.data[i]]);
-            addTableToPdf('Claims by Final Status', { head: [['Status', 'Count']], body: toTableData(aggregatedMetrics.claimsByStatus) });
-            addTableToPdf('Claims by Workflow State', { head: [['State', 'Count']], body: toTableData(aggregatedMetrics.claimsByState) });
-            addTableToPdf('Top 10 Claim Edits', { head: [['Edit', 'Count']], body: toTop10Data(aggregatedMetrics.topEdits) });
-            addTableToPdf('Top 10 Providers (Overall)', { head: [['Provider', 'Count']], body: toTop10Data(aggregatedMetrics.topProvidersOverall) });
             
             pdf.save(fileName);
         }
