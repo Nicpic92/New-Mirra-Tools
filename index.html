@@ -1,3 +1,5 @@
+--- START OF FILE index.html ---
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -167,18 +169,6 @@
         };
 
         // --- DYNAMIC CATEGORIZATION LOGIC ---
-        async function loadCategorizationConfig() {
-            try {
-                const response = await fetch('/.netlify/functions/get-categorization-config');
-                if (!response.ok) throw new Error('Failed to load categorization config');
-                const config = await response.json();
-                categorizationConfig.editRulesMap = new Map(config.editRules.map(r => [r.edit_text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name, send_to_l1_monitor: r.send_to_l1_monitor }]));
-                categorizationConfig.noteRulesMap = new Map(config.noteRules.map(r => [r.note_keyword, { category: r.category_name, teamId: r.team_id, teamName: r.team_name, send_to_l1_monitor: r.send_to_l1_monitor }]));
-            } catch (error) {
-                console.error("Could not load categorization rules:", error);
-            }
-        }
-
         function getClaimCategory(claim) {
             const notes = (getVal(claim, 'notes') || '').toLowerCase();
             const edit = getVal(claim, 'edit');
@@ -219,14 +209,66 @@
             }
         }
 
-        document.getElementById('configSelector').addEventListener('change', (e) => {
-            const selectedId = parseInt(e.target.value, 10);
-            const selectedConfig = allConfigs.find(c => c.id === selectedId);
+        document.getElementById('configSelector').addEventListener('change', async (e) => {
+            const selectedId = e.target.value;
+            const selectedConfig = allConfigs.find(c => c.id == selectedId);
             const clientNameInput = document.getElementById('clientName');
+
+            // Clear previous rules
+            categorizationConfig.editRulesMap.clear();
+            categorizationConfig.noteRulesMap.clear();
             
             if (selectedConfig?.config_data) {
                 clientNameInput.value = selectedConfig.config_data.clientName || '';
                 currentColumnMappings = selectedConfig.config_data.columnMappings || {};
+                
+                // Fetch rules specific to this configuration
+                try {
+                    const [editRes, noteRes] = await Promise.all([
+                        fetch(`/.netlify/functions/rules?type=edit&config_id=${selectedId}`),
+                        fetch(`/.netlify/functions/rules?type=note&config_id=${selectedId}`)
+                    ]);
+
+                    if (!editRes.ok || !noteRes.ok) throw new Error('Failed to fetch rules for config.');
+
+                    const editRules = await editRes.json();
+                    const noteRules = await noteRes.json();
+                    
+                    const response = await fetch('/.netlify/functions/categories');
+                    const allCategories = await response.json();
+
+                    const categoryMap = new Map(allCategories.map(cat => [cat.id, cat]));
+
+                    // Populate the maps for the categorization engine, enriching with team name
+                    editRules.forEach(r => {
+                        const category = categoryMap.get(r.category_id);
+                        if (category) {
+                           categorizationConfig.editRulesMap.set(r.text, { 
+                                category: category.category_name, 
+                                teamId: category.team_id, 
+                                teamName: category.team_name, 
+                                send_to_l1_monitor: category.send_to_l1_monitor 
+                            });
+                        }
+                    });
+
+                    noteRules.forEach(r => {
+                        const category = categoryMap.get(r.category_id);
+                        if (category) {
+                            categorizationConfig.noteRulesMap.set(r.text, { 
+                                category: category.category_name, 
+                                teamId: category.team_id, 
+                                teamName: category.team_name, 
+                                send_to_l1_monitor: category.send_to_l1_monitor 
+                            });
+                        }
+                    });
+
+                } catch (error) {
+                    console.error('Error loading client-specific rules:', error);
+                    alert('Could not load the categorization rules for this client. Categorization may be incorrect.');
+                }
+
                 if (allClaimsData.length > 0) handleFile(null, true); 
             } else {
                 clientNameInput.value = '';
@@ -250,7 +292,6 @@
             document.getElementById('categoryFilter').addEventListener('change', () => renderWorkQueue(allClaimsData));
             
             populateConfigSelector();
-            loadCategorizationConfig();
         });
 
         // --- MAIN FILE HANDLING AND PROCESSING LOGIC ---
