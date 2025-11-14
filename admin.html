@@ -448,7 +448,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const notes = (getAdminVal(claim, 'notes') || '').toLowerCase();
         const edit = getAdminVal(claim, 'edit');
         
-        // Use the config-specific rules now
         if (edit && configSpecificRules.editRulesMap.has(edit)) {
             return configSpecificRules.editRulesMap.get(edit);
         }
@@ -467,8 +466,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const mrw9Data = await readFile(file);
             const headers = Object.keys(mrw9Data[0] || {});
-            
-            // Find headers using a case-insensitive trim search
+
             const findHeader = (possibleNames) => {
                 const lowerCaseNames = possibleNames.map(n => n.toLowerCase());
                 return headers.find(h => lowerCaseNames.includes(h.toLowerCase().trim()));
@@ -478,38 +476,47 @@ document.addEventListener('DOMContentLoaded', () => {
             const taxIdKey = findHeader(['billing tax id']);
             const claimIdKeyMRW9 = findHeader(['claim id']);
 
-            if (!w9AttachedKey || !taxIdKey || !claimIdKeyMRW9) {
-                alert("The MRW9 report must contain the exact columns: 'Claim ID', 'Billing TAX ID', and 'W9 Attached in PV (YES/NO)'. Please check the file and try again.");
+            let missingHeaders = [];
+            if (!w9AttachedKey) missingHeaders.push("'W9 Attached in PV (YES/NO)'");
+            if (!taxIdKey) missingHeaders.push("'Billing TAX ID'");
+            if (!claimIdKeyMRW9) missingHeaders.push("'Claim ID'");
+
+            if (missingHeaders.length > 0) {
+                alert(`The MRW9 report is missing the following required columns: ${missingHeaders.join(', ')}. Please check the file and try again.`);
                 event.target.value = '';
                 return;
             }
 
+            const mrw9ClaimMap = new Map();
             const tinStatusMap = new Map();
             mrw9Data.forEach(row => {
-                const tin = row[taxIdKey];
+                const claimId = row[claimIdKeyMRW9]?.toString().trim();
+                const tin = row[taxIdKey]?.toString().trim();
                 const w9Status = (row[w9AttachedKey] || '').toString().trim().toUpperCase();
+                
+                if (claimId) {
+                    mrw9ClaimMap.set(claimId, row);
+                }
                 if (tin && w9Status === 'YES') {
-                    tinStatusMap.set(tin.toString(), 'YES');
+                    tinStatusMap.set(tin, 'YES');
                 }
             });
 
-            const mrw9ClaimIds = new Set(mrw9Data.map(row => row[claimIdKeyMRW9]?.toString()));
-            
-            const filteredClaims = mainReportFullData.filter(claim => {
-                const claimId = getAdminVal(claim, 'claimId')?.toString();
-                if (!claimId || !mrw9ClaimIds.has(claimId)) {
-                    return false; // Exclude if not in the MRW9 report
+            const filteredClaims = mainReportFullData.filter(mainClaim => {
+                const claimId = getAdminVal(mainClaim, 'claimId')?.toString().trim();
+                if (!claimId || !mrw9ClaimMap.has(claimId)) {
+                    return false;
                 }
-                const status = (getAdminVal(claim, 'status') || '').toUpperCase();
-                const categoryInfo = getTriageClaimCategory(claim);
+                const status = (getAdminVal(mainClaim, 'status') || '').toUpperCase();
+                const categoryInfo = getTriageClaimCategory(mainClaim);
                 const teamName = categoryInfo.teamName;
                 const categoryName = (categoryInfo.category || '').toUpperCase();
                 return status === 'MANAGEMENTREVIEW' && teamName === 'Provider Operations' && categoryName.includes('W9');
             });
 
             triageClaimsData = filteredClaims.map(claim => {
-                const tin = getAdminVal(claim, 'billingProviderTaxId');
-                const hasW9 = tin && tinStatusMap.has(tin.toString()) ? 'YES' : 'NO';
+                const tin = getAdminVal(claim, 'billingProviderTaxId')?.toString().trim();
+                const hasW9 = tin && tinStatusMap.has(tin) ? 'YES' : 'NO';
                 return {
                     claimId: getAdminVal(claim, 'claimId'),
                     providerName: getAdminVal(claim, 'providerName'),
@@ -611,7 +618,6 @@ document.addEventListener('DOMContentLoaded', () => {
             categorizationReportUploader.disabled = !hasRequiredCols; 
             if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.');
             
-            // Filter rules based on the selected config for the triage logic
             const categoryTeamMap = new Map(allCategories.map(c => [c.id, { team_id: c.team_id, team_name: c.team_name, category_name: c.category_name }]));
             const associatedTeamIds = new Set(allClientTeamAssociations.filter(assoc => assoc.config_id === selectedId).map(assoc => assoc.team_id));
             
@@ -626,7 +632,6 @@ document.addEventListener('DOMContentLoaded', () => {
             configSpecificRules.editRulesMap = new Map(filteredEditRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
             configSpecificRules.noteRulesMap = new Map(filteredNoteRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
 
-            // Reset triage section on config change
             w9TriageSection.style.display = 'none';
             triageMrw9Uploader.value = '';
             triageResultsContainer.classList.add('d-none');
@@ -639,12 +644,10 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return; 
         try {
             const dataJson = await readFile(file);
-            mainReportFullData = dataJson; // Store the full data for triage
+            mainReportFullData = dataJson;
             
-            // 1. Process for discovering new rules
             processUploadedReport(dataJson);
 
-            // 2. Prepare for W9 Triage
             alert(`Loaded ${mainReportFullData.length} claims from the main report. You can now proceed with W9 Triage.`);
             w9TriageSection.style.display = 'block';
             triagePlaceholder.style.display = 'block';
@@ -717,4 +720,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body>
-</html>
+</html>```
