@@ -19,7 +19,6 @@ exports.handler = async function(event) {
 
         switch (event.httpMethod) {
             case 'GET': {
-                // THE FIX IS HERE: I have removed "r.id" from the SELECT statement.
                 const sql = `
                     SELECT r.${textField} as text, r.category_id, c.category_name, t.team_name
                     FROM ${tableName} r
@@ -40,21 +39,32 @@ exports.handler = async function(event) {
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
-                    const sql = `
-                        INSERT INTO ${tableName} (config_id, ${textField}, category_id)
-                        VALUES ($1, $2, $3)
-                        ON CONFLICT (config_id, ${textField})
-                        DO UPDATE SET category_id = EXCLUDED.category_id, last_seen = CURRENT_TIMESTAMP;
-                    `;
+                    
+                    // THE FIX: Replace INSERT...ON CONFLICT with a more robust check-then-act logic.
+                    // This avoids reliance on a specific UNIQUE constraint in the database schema.
                     for (const rule of rules) {
                         if (rule.text && rule.category_id) {
-                            await client.query(sql, [config_id, rule.text, rule.category_id]);
+                            // 1. Check if a rule with this text and config_id already exists.
+                            const checkSql = `SELECT id FROM ${tableName} WHERE config_id = $1 AND ${textField} = $2;`;
+                            const { rows } = await client.query(checkSql, [config_id, rule.text]);
+
+                            if (rows.length > 0) {
+                                // 2. If it exists, UPDATE the existing rule.
+                                const existingRuleId = rows[0].id;
+                                const updateSql = `UPDATE ${tableName} SET category_id = $1, last_seen = CURRENT_TIMESTAMP WHERE id = $2;`;
+                                await client.query(updateSql, [rule.category_id, existingRuleId]);
+                            } else {
+                                // 3. If it does not exist, INSERT a new rule.
+                                const insertSql = `INSERT INTO ${tableName} (config_id, ${textField}, category_id) VALUES ($1, $2, $3);`;
+                                await client.query(insertSql, [config_id, rule.text, rule.category_id]);
+                            }
                         }
                     }
+                    
                     await client.query('COMMIT');
                 } catch (e) {
                     await client.query('ROLLBACK');
-                    throw e;
+                    throw e; // Rethrow to be caught by the outer catch block
                 } finally {
                     client.release();
                 }
