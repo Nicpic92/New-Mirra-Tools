@@ -1,8 +1,6 @@
-// This function handles all Create, Read, Update, and Delete (CRUD) operations.
-const { Pool } = require('pg');
+// --- START OF FILE configurations.js ---
 
-// Create the connection pool ONCE, outside the handler
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = require('./database.js'); // THE FIX: Use the shared pool
 
 exports.handler = async function(event) {
     const { id } = event.queryStringParameters || {};
@@ -37,8 +35,8 @@ exports.handler = async function(event) {
             default:
                 return { statusCode: 405, body: 'Method Not Allowed' };
         }
-    } catch (error) {
-        console.error('Database error:', error);
+    } catch (error)
+        console.error('Database error in configurations.js:', error);
         return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
     }
 };
