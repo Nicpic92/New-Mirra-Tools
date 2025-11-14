@@ -44,4 +44,3 @@ exports.handler = async function(event, context) {
         await pool.end();
     }
 };
-// --- END OF FILE get-categorization-config.js ---
