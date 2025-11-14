@@ -319,7 +319,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
     // Triage State
-    let triageClaimsData = [], mainReportClaimIds = new Set();
+    let mainReportFullData = [], triageClaimsData = [];
 
     const standardFields = [
         { key: 'claimId', displayName: 'Claim ID / Number', required: true, type: 'string' }, { key: 'age', displayName: 'Age (in days)', required: true, type: 'number' }, { key: 'netPayment', displayName: 'Net Payment Amount', required: true, type: 'number' }, { key: 'state', displayName: 'Claim State', required: true, type: 'string' }, { key: 'status', displayName: 'Claim Status', required: true, type: 'string' }, { key: 'networkStatus', displayName: 'Network Status', required: true, type: 'string' }, { key: 'providerName', displayName: 'Billing Provider Name', required: true, type: 'string' }, { key: 'edit', displayName: 'Claim Edits', required: true, type: 'string' }, { key: 'notes', displayName: 'Claim Notes', required: true, type: 'string' }, { key: 'totalCharges', displayName: 'Total Billed Amount', required: false, type: 'number' }, { key: 'dsnp', displayName: 'DSNP Status', required: false, type: 'string' }, { key: 'payer', displayName: 'Payer Name', required: false, type: 'string' }, { key: 'claimCategory', displayName: 'Category', required: false, type: 'string' }, { key: 'claimType', displayName: 'Claim Type', required: false, type: 'string' }, { key: 'receivedDate', displayName: 'Received Date', required: false, type: 'date' }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID', required: false, type: 'string' }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI', required: false, type: 'string' }, { key: 'patientName', displayName: 'Patient Name', required: false, type: 'string' }, { key: 'subscriberId', displayName: 'Subscriber ID', required: false, type: 'string' }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name', required: false, type: 'string' }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI', required: false, type: 'string' }, { key: 'dosFrom', displayName: 'Date of Service (From)', required: false, type: 'date' }, { key: 'dosTo', displayName: 'Date of Service (To)', required: false, type: 'date' }, { key: 'cleanAge', displayName: 'Clean Age', required: false, type: 'number' }, { key: 'pbpName', displayName: 'PBP Name', required: false, type: 'string' }, { key: 'planName', displayName: 'Plan Name', required: false, type: 'string' }, { key: 'activityLog', displayName: 'Activity Log Description', required: false, type: 'string' }, { key: 'activityUser', displayName: 'Activity Performed By', required: false, type: 'string' }, { key: 'activityDate', displayName: 'Activity Performed On', required: false, type: 'date' }
@@ -462,32 +462,43 @@ document.addEventListener('DOMContentLoaded', () => {
         
     async function handleTriageMRW9File(event) {
         const file = event.target.files[0];
-        if (!file) return;
+        if (!file || mainReportFullData.length === 0) return;
+
         try {
             const mrw9Data = await readFile(file);
-            const tinStatusMap = new Map();
-            
             const headers = Object.keys(mrw9Data[0] || {});
-            const w9AttachedKey = headers.find(h => h.toLowerCase().includes('w9') && h.toLowerCase().includes('pv'));
+            
+            // Find headers using a case-insensitive trim search
+            const findHeader = (possibleNames) => {
+                const lowerCaseNames = possibleNames.map(n => n.toLowerCase());
+                return headers.find(h => lowerCaseNames.includes(h.toLowerCase().trim()));
+            };
 
-            if (!w9AttachedKey || !columnMappingsForCategorization.billingProviderTaxId) {
-                alert("The selected configuration must have 'Billing Provider Tax ID' mapped, and the MRW9 report must contain a column with 'W9' and 'PV' in its header to identify W9 status.");
+            const w9AttachedKey = findHeader(['w9 attached in pv (yes/no)']);
+            const taxIdKey = findHeader(['billing tax id']);
+            const claimIdKeyMRW9 = findHeader(['claim id']);
+
+            if (!w9AttachedKey || !taxIdKey || !claimIdKeyMRW9) {
+                alert("The MRW9 report must contain the exact columns: 'Claim ID', 'Billing TAX ID', and 'W9 Attached in PV (YES/NO)'. Please check the file and try again.");
                 event.target.value = '';
                 return;
             }
 
+            const tinStatusMap = new Map();
             mrw9Data.forEach(row => {
-                const tin = getAdminVal(row, 'billingProviderTaxId');
+                const tin = row[taxIdKey];
                 const w9Status = (row[w9AttachedKey] || '').toString().trim().toUpperCase();
                 if (tin && w9Status === 'YES') {
                     tinStatusMap.set(tin.toString(), 'YES');
                 }
             });
 
-            const filteredClaims = mrw9Data.filter(claim => {
-                const claimId = getAdminVal(claim, 'claimId');
-                if (!claimId || !mainReportClaimIds.has(claimId.toString())) {
-                    return false; // Exclude if not in the main report
+            const mrw9ClaimIds = new Set(mrw9Data.map(row => row[claimIdKeyMRW9]?.toString()));
+            
+            const filteredClaims = mainReportFullData.filter(claim => {
+                const claimId = getAdminVal(claim, 'claimId')?.toString();
+                if (!claimId || !mrw9ClaimIds.has(claimId)) {
+                    return false; // Exclude if not in the MRW9 report
                 }
                 const status = (getAdminVal(claim, 'status') || '').toUpperCase();
                 const categoryInfo = getTriageClaimCategory(claim);
@@ -601,13 +612,19 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.');
             
             // Filter rules based on the selected config for the triage logic
+            const categoryTeamMap = new Map(allCategories.map(c => [c.id, { team_id: c.team_id, team_name: c.team_name, category_name: c.category_name }]));
             const associatedTeamIds = new Set(allClientTeamAssociations.filter(assoc => assoc.config_id === selectedId).map(assoc => assoc.team_id));
-            const associatedCategoryIds = new Set(allCategories.filter(cat => associatedTeamIds.has(cat.team_id)).map(cat => cat.id));
-            const filteredEditRules = existingEditRules.filter(rule => associatedCategoryIds.has(rule.category_id));
-            const filteredNoteRules = existingNoteRules.filter(rule => associatedCategoryIds.has(rule.category_id));
+            
+            const getRuleDetails = (rule) => {
+                const catDetails = categoryTeamMap.get(rule.category_id);
+                return catDetails ? { ...rule, ...catDetails } : null;
+            };
 
-            configSpecificRules.editRulesMap = new Map(filteredEditRules.map(r => [r.text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
-            configSpecificRules.noteRulesMap = new Map(filteredNoteRules.map(r => [r.text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
+            const filteredEditRules = existingEditRules.map(getRuleDetails).filter(r => r && associatedTeamIds.has(r.team_id));
+            const filteredNoteRules = existingNoteRules.map(getRuleDetails).filter(r => r && associatedTeamIds.has(r.team_id));
+
+            configSpecificRules.editRulesMap = new Map(filteredEditRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
+            configSpecificRules.noteRulesMap = new Map(filteredNoteRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
 
             // Reset triage section on config change
             w9TriageSection.style.display = 'none';
@@ -622,20 +639,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!file) return; 
         try {
             const dataJson = await readFile(file);
+            mainReportFullData = dataJson; // Store the full data for triage
             
-            // 1. Process for new rules
+            // 1. Process for discovering new rules
             processUploadedReport(dataJson);
 
             // 2. Prepare for W9 Triage
-            mainReportClaimIds.clear();
-            dataJson.forEach(row => {
-                const claimId = getAdminVal(row, 'claimId');
-                if (claimId) {
-                    mainReportClaimIds.add(claimId.toString());
-                }
-            });
-
-            alert(`Loaded ${mainReportClaimIds.size} claims from the main report. You can now proceed with W9 Triage.`);
+            alert(`Loaded ${mainReportFullData.length} claims from the main report. You can now proceed with W9 Triage.`);
             w9TriageSection.style.display = 'block';
             triagePlaceholder.style.display = 'block';
             triageResultsContainer.classList.add('d-none');
