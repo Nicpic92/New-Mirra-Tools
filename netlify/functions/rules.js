@@ -1,3 +1,5 @@
+--- START OF FILE rules.js ---
+
 // --- START OF FILE rules.js ---
 
 const { Pool } = require('pg');
@@ -6,10 +8,16 @@ const { Pool } = require('pg');
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 exports.handler = async function(event) {
-    const { type } = event.queryStringParameters;
+    // Both 'type' and 'config_id' are now expected for most operations.
+    const { type, config_id } = event.queryStringParameters;
 
     if (!['edit', 'note'].includes(type)) {
         return { statusCode: 400, body: 'Invalid rule type specified.' };
+    }
+    
+    // config_id is required for all operations.
+    if (!config_id) {
+        return { statusCode: 400, body: 'Missing config_id parameter.' };
     }
 
     const tableName = type === 'edit' ? 'claim_edit_rules' : 'claim_note_rules';
@@ -18,11 +26,12 @@ exports.handler = async function(event) {
     try {
         switch (event.httpMethod) {
             case 'GET': {
-                const sql = `SELECT r.${textField} as text, r.category_id, c.category_name, t.team_name
+                const sql = `SELECT r.id, r.${textField} as text, r.category_id, c.category_name, t.team_name
                              FROM ${tableName} r
                              JOIN claim_categories c ON r.category_id = c.id
-                             LEFT JOIN teams t ON c.team_id = t.id;`;
-                const result = await pool.query(sql);
+                             LEFT JOIN teams t ON c.team_id = t.id
+                             WHERE r.config_id = $1;`;
+                const result = await pool.query(sql, [config_id]);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
@@ -33,15 +42,17 @@ exports.handler = async function(event) {
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
+                    // The conflict target now includes config_id to ensure rule text is unique PER client config.
                     const sql = `
-                        INSERT INTO ${tableName} (${textField}, category_id)
-                        VALUES ($1, $2)
-                        ON CONFLICT (${textField})
+                        INSERT INTO ${tableName} (config_id, ${textField}, category_id)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (config_id, ${textField})
                         DO UPDATE SET category_id = EXCLUDED.category_id, last_seen = CURRENT_TIMESTAMP;
                     `;
                     for (const rule of rules) {
                         if (rule.text && rule.category_id) {
-                            await client.query(sql, [rule.text, rule.category_id]);
+                            // Pass config_id as the first parameter
+                            await client.query(sql, [config_id, rule.text, rule.category_id]);
                         }
                     }
                     await client.query('COMMIT');
@@ -58,8 +69,9 @@ exports.handler = async function(event) {
                 if (!text) {
                     return { statusCode: 400, body: 'Missing rule text to delete.' };
                 }
-                const sql = `DELETE FROM ${tableName} WHERE ${textField} = $1;`;
-                await pool.query(sql, [text]);
+                // Deletion now requires both the rule text AND the config_id to be specific.
+                const sql = `DELETE FROM ${tableName} WHERE ${textField} = $1 AND config_id = $2;`;
+                await pool.query(sql, [text, config_id]);
                 return { statusCode: 200, body: JSON.stringify({ message: 'Rule deleted.' }) };
             }
             default:
