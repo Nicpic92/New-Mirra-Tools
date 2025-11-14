@@ -1,3 +1,5 @@
+// --- START OF FILE rules.js ---
+
 // This function handles CRUD operations for categorization rules.
 const { Pool } = require('pg');
 
@@ -20,7 +22,7 @@ exports.handler = async function(event) {
                 const sql = `SELECT r.${textField} as text, r.category_id, c.category_name, t.team_name
                              FROM ${tableName} r
                              JOIN claim_categories c ON r.category_id = c.id
-                             JOIN teams t ON c.team_id = t.id;`;
+                             LEFT JOIN teams t ON c.team_id = t.id;`;
                 const result = await db.query(sql);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
@@ -72,3 +74,4 @@ exports.handler = async function(event) {
         await db.end();
     }
 };
+// --- END OF FILE rules.js ---
