@@ -2,10 +2,10 @@
 
 const { Pool } = require('pg');
 
-const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
+// Create the connection pool ONCE, outside the handler
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 exports.handler = async function(event) {
-    const db = getDb();
     const { id } = event.queryStringParameters || {};
 
     try {
@@ -17,7 +17,7 @@ exports.handler = async function(event) {
                     LEFT JOIN teams t ON c.team_id = t.id
                     ORDER BY t.team_name, c.category_name;
                 `;
-                const result = await db.query(sql);
+                const result = await pool.query(sql);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
@@ -26,12 +26,12 @@ exports.handler = async function(event) {
                     return { statusCode: 400, body: 'Missing category_name or team_id' };
                 }
                 const sql = 'INSERT INTO claim_categories (category_name, team_id, send_to_l1_monitor) VALUES ($1, $2, $3) RETURNING *;';
-                const result = await db.query(sql, [category_name, team_id, send_to_l1_monitor || false]);
+                const result = await pool.query(sql, [category_name, team_id, send_to_l1_monitor || false]);
                 return { statusCode: 201, body: JSON.stringify(result.rows[0]) };
             }
             case 'DELETE': {
                 if (!id) return { statusCode: 400, body: 'Missing category ID' };
-                await db.query('DELETE FROM claim_categories WHERE id = $1;', [id]);
+                await pool.query('DELETE FROM claim_categories WHERE id = $1;', [id]);
                 return { statusCode: 200, body: JSON.stringify({ message: 'Category deleted' }) };
             }
             default:
@@ -41,5 +41,5 @@ exports.handler = async function(event) {
         console.error('Database error:', error);
         return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
     }
-    // REMOVED: The finally block with db.end()
+    // The "finally" block with db.end() is removed.
 };
