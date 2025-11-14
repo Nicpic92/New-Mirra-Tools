@@ -1,5 +1,3 @@
---- START OF FILE admin.html ---
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -320,10 +318,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeEditRules = [], activeNoteRules = [];
     let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
+    // THE FIX: State for uncategorized rules needs to be preserved to allow re-rendering
+    let uncategorizedEdits = [], uncategorizedNotes = [];
+
     // Triage State
     let mainReportFullData = [], triageClaimsData = [];
     
-    // THE FIX: Disable dropdowns that depend on initial data load
+    // Disable dropdowns that depend on initial data load
     clientRuleFilter.disabled = true;
     categorizationConfigSelector.disabled = true;
     clientTeamConfigSelector.disabled = true;
@@ -340,14 +341,19 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadConfigurations() {
         try {
             const response = await fetch(CONFIG_API);
+            if (!response.ok) throw new Error('Failed to fetch configurations');
             allClientConfigs = await response.json();
             window.allClientConfigs = allClientConfigs;
             configList.innerHTML = allClientConfigs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
             
             const selectors = [categorizationConfigSelector, clientTeamConfigSelector, clientRuleFilter];
             selectors.forEach(sel => {
+                const currentVal = sel.value; // Preserve selection
                 sel.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
                 allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id)));
+                if (allClientConfigs.some(c => c.id == currentVal)) {
+                    sel.value = currentVal;
+                }
             });
 
             allClientConfigs.forEach(config => {
@@ -386,15 +392,12 @@ document.addEventListener('DOMContentLoaded', () => {
             activeNoteRules = [];
             return;
         }
-        console.log(`Fetching rules for config_id: ${configId}`);
         const [editRes, noteRes] = await Promise.all([
             fetch(`${RULES_API}?type=edit&config_id=${configId}`),
             fetch(`${RULES_API}?type=note&config_id=${configId}`)
         ]);
         if (editRes.ok) activeEditRules = await editRes.json();
         if (noteRes.ok) activeNoteRules = await noteRes.json();
-        console.log('Fetched Edit Rules:', activeEditRules);
-        console.log('Fetched Note Rules:', activeNoteRules);
     }
     async function loadClientTeamAssociations() { const response = await fetch(CLIENT_TEAM_API); if(response.ok) allClientTeamAssociations = await response.json(); }
     
@@ -405,7 +408,7 @@ document.addEventListener('DOMContentLoaded', () => {
             populateTeamDropdown();
             renderCategoryList();
             
-            // THE FIX: Re-enable the dropdowns now that all data is loaded
+            // Re-enable the dropdowns now that all data is loaded
             clientRuleFilter.disabled = false;
             categorizationConfigSelector.disabled = false;
             clientTeamConfigSelector.disabled = false;
@@ -443,17 +446,39 @@ document.addEventListener('DOMContentLoaded', () => {
             const noteValue = (row[notesColumn] || '').toString().trim();
             if (noteValue && !activeNoteRules.some(r => r.text === noteValue)) detectedNotes.add(noteValue);
         });
-        const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b));
-        const sortedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b));
+
+        // THE FIX: Store discovered rules in global state so the UI can be rebuilt later
+        uncategorizedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b));
+        uncategorizedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b));
+
+        // THE FIX: Call a dedicated render function
+        renderUncategorizedRulesTables();
+    }
+    
+    // THE FIX: New function to render the "Discover" tables from global state
+    function renderUncategorizedRulesTables() {
         uncategorizedEditsTable.innerHTML = '';
-        sortedEdits.forEach(text => { const row = uncategorizedEditsTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`; row.cells[0].firstChild.dataset.text = text; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; });
+        uncategorizedEdits.forEach(text => {
+            const row = uncategorizedEditsTable.insertRow();
+            row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`;
+            row.cells[0].firstChild.dataset.text = text;
+            row.insertCell().innerHTML = createCategoryDropdown().outerHTML;
+        });
+
         uncategorizedNotesTable.innerHTML = '';
-        sortedNotes.forEach(noteText => { const row = uncategorizedNotesTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`; row.cells[0].firstChild.dataset.text = noteText; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; });
-        const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0;
+        uncategorizedNotes.forEach(noteText => {
+            const row = uncategorizedNotesTable.insertRow();
+            row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`;
+            row.cells[0].firstChild.dataset.text = noteText;
+            row.insertCell().innerHTML = createCategoryDropdown().outerHTML;
+        });
+
+        const hasRules = uncategorizedEdits.length > 0 || uncategorizedNotes.length > 0;
         rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none';
         noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file.';
         noRulesFoundDiv.style.display = hasRules ? 'none' : 'block';
     }
+
     function createCategoryDropdown(selectedId = '') { const select = document.createElement('select'); select.className = 'form-select form-select-sm'; select.add(new Option('Select category...', '')); allCategories.sort((a,b) => (a.team_name || 'Z').localeCompare(b.team_name || 'Z') || a.category_name.localeCompare(b.category_name)).forEach(cat => select.add(new Option(`${cat.team_name || 'Unassigned'} -> ${cat.category_name}`, cat.id))); if (selectedId) { select.value = selectedId; } return select; }
     async function saveNewRules() {
         const configId = categorizationConfigSelector.value;
@@ -470,14 +495,15 @@ document.addEventListener('DOMContentLoaded', () => {
                 noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note&config_id=${configId}`, { method: 'POST', body: bodyNote }) : Promise.resolve()
             ]);
             alert('Rules saved successfully!');
-            editRulesToSave.forEach(rule => rule.row.remove());
-            noteRulesToSave.forEach(rule => rule.row.remove());
+            
+            // THE FIX: After saving, refresh the underlying rule set and re-render the tables
             await loadRulesForConfig(configId);
-            if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) {
-                rulesAssignmentContainer.style.display = 'none';
-                noRulesFoundDiv.textContent = 'Upload a file to begin.';
-                noRulesFoundDiv.style.display = 'block';
-            }
+            // Re-process the list of uncategorized items to remove the ones we just saved
+            uncategorizedEdits = uncategorizedEdits.filter(edit => !editRulesToSave.some(saved => saved.text === edit));
+            uncategorizedNotes = uncategorizedNotes.filter(note => !noteRulesToSave.some(saved => saved.text === note));
+            renderUncategorizedRulesTables(); // Re-render with the remaining items
+            renderExistingRulesTables(activeEditRules, activeNoteRules); // Also refresh the 'Manage' tab
+
         } catch (error) { alert(`Failed to save rules: ${error.message}`); }
     }
     
@@ -695,6 +721,7 @@ document.addEventListener('DOMContentLoaded', () => {
     reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const sheet = workbook.Sheets[workbook.SheetNames[0]]; if (!sheet) throw new Error("Sheet not found."); const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }); detectedHeaders = (json[0] || []).filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file. Please ensure the first row contains the column names."); return; } renderMappingUI(); } catch (err) { alert(`Error processing file: ${err.message}`); console.error(err); } }; reader.readAsArrayBuffer(file); });
     clearBtn.addEventListener('click', clearConfigForm);
     
+    // THE FIX: Replaced partial state update with a full data reload
     newTeamForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = newTeamNameInput.value.trim();
@@ -702,19 +729,14 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) });
             if (!response.ok) throw new Error('Failed to add team. It may already exist.');
-            
-            const newTeam = await response.json();
-            allTeams.push(newTeam);
-            
-            renderTeamList();
-            populateTeamDropdown();
-            
+            await loadAllData(); // Reload all data to ensure consistency
             newTeamNameInput.value = '';
         } catch (error) {
             alert(error.message);
         }
     });
 
+    // THE FIX: Replaced partial state update with a full data reload and re-rendering of dependent UI
     newCategoryForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const category_name = newCategoryNameInput.value.trim();
@@ -725,21 +747,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) });
             if (!response.ok) throw new Error('Failed to add category. It may already exist.');
 
-            const newCategory = await response.json();
+            await loadAllData(); // Reload all data to get the new category
             
-            const team = allTeams.find(t => t.id === newCategory.team_id);
-            if (team) {
-                newCategory.team_name = team.team_name;
-            }
-            
-            allCategories.push(newCategory);
-            
-            renderCategoryList();
-            renderExistingRulesTables(activeEditRules, activeNoteRules); // THE FIX: Re-render rule tables to include the new option
-            
+            // Now, re-render all UI components that use the category list
+            renderExistingRulesTables(activeEditRules, activeNoteRules); // Refresh 'Manage' tab
+            renderUncategorizedRulesTables(); // Refresh 'Discover' tab
+
             newCategoryNameInput.value = '';
             l1MonitorCheckbox.checked = false;
-
         } catch (error) {
             alert(error.message);
         }
