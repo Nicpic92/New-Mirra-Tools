@@ -99,8 +99,8 @@
             <div class="col-12">
                 <div class="card">
                     <div class="card-body">
-                        <h2>Global Categorization & Team Management</h2>
-                        <p class="text-muted">Manage teams, define categories for each team, and create rules to automatically assign claims.</p>
+                        <h2>Client-Specific Categorization & Team Management</h2>
+                        <p class="text-muted">Manage teams and categories globally, then create rules for each client to automatically assign claims.</p>
                         
                         <ul class="nav nav-tabs" id="ruleTabs" role="tablist">
                             <li class="nav-item" role="presentation">
@@ -151,7 +151,7 @@
                                     <div class="col-md-8">
                                         <h5>3. Discover & Assign Rules</h5>
                                         <div class="row bg-light p-3 rounded mb-3">
-                                            <div class="col-md-6"><label class="form-label fw-bold">Select Config</label><select class="form-select" id="categorizationConfigSelector"><option>Load configs...</option></select></div>
+                                            <div class="col-md-6"><label class="form-label fw-bold">Select Client</label><select class="form-select" id="categorizationConfigSelector"><option>Load configs...</option></select></div>
                                             <div class="col-md-6"><label class="form-label fw-bold">Upload Report</label><input class="form-control" type="file" id="categorizationReportUploader" accept=".xlsx" disabled></div>
                                         </div>
                                         <div id="rulesAssignmentContainer" style="display: none;">
@@ -213,7 +213,7 @@
                                     <div class="w-25">
                                         <label for="clientRuleFilter" class="form-label">Filter by Client</label>
                                         <select class="form-select form-select-sm" id="clientRuleFilter">
-                                            <option value="all">Show All Rules</option>
+                                            <option value="">Select a Client...</option>
                                         </select>
                                     </div>
                                 </div>
@@ -317,7 +317,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Global State
     let allTeams = [], allCategories = [], allClientConfigs = [], allClientTeamAssociations = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {}, currentCustomWidgets = [];
-    // These are no longer loaded globally. They will be populated on-demand.
     let activeEditRules = [], activeNoteRules = [];
     let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
@@ -342,8 +341,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             const selectors = [categorizationConfigSelector, clientTeamConfigSelector, clientRuleFilter];
             selectors.forEach(sel => {
-                const isFilter = sel.id === 'clientRuleFilter';
-                sel.innerHTML = isFilter ? '<option value="all">Show All Rules</option>' : '<option selected disabled value="">Select a configuration...</option>';
+                sel.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
                 allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id)));
             });
 
@@ -383,12 +381,15 @@ document.addEventListener('DOMContentLoaded', () => {
             activeNoteRules = [];
             return;
         }
+        console.log(`Fetching rules for config_id: ${configId}`);
         const [editRes, noteRes] = await Promise.all([
             fetch(`${RULES_API}?type=edit&config_id=${configId}`),
             fetch(`${RULES_API}?type=note&config_id=${configId}`)
         ]);
         if (editRes.ok) activeEditRules = await editRes.json();
         if (noteRes.ok) activeNoteRules = await noteRes.json();
+        console.log('Fetched Edit Rules:', activeEditRules);
+        console.log('Fetched Note Rules:', activeNoteRules);
     }
     async function loadClientTeamAssociations() { const response = await fetch(CLIENT_TEAM_API); if(response.ok) allClientTeamAssociations = await response.json(); }
     
@@ -398,7 +399,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTeamList();
             populateTeamDropdown();
             renderCategoryList();
-            renderExistingRulesTables();
+            // DO NOT render rules tables here, as no client is selected yet.
         } catch (error) { console.error("Failed to load initial admin data:", error); alert("Error loading administrative data. Please check the console and refresh the page."); }
     }
 
@@ -489,7 +490,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function deleteRule(type, text) {
         const configId = clientRuleFilter.value;
-        if (!configId || configId === 'all') return alert('Please select a specific client to delete a rule from.');
+        if (!configId) return alert('Please select a specific client to delete a rule from.');
         if (!confirm(`Are you sure you want to delete this rule?\n\nTYPE: ${type}\nRULE: ${text}`)) return;
         try {
             const response = await fetch(`${RULES_API}?type=${type}&config_id=${configId}`, { method: 'DELETE', body: JSON.stringify({ text }) });
@@ -501,7 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
     async function saveExistingRuleChanges() {
         const configId = clientRuleFilter.value;
-        if (!configId || configId === 'all') return alert('Please select a specific client to save changes for.');
+        if (!configId) return alert('Please select a specific client to save changes for.');
         const getChangedRules = (tableBody) => Array.from(tableBody.rows).map(row => ({ text: row.dataset.text, category_id: row.querySelector('select').value }));
         const editRulesToUpdate = getChangedRules(existingEditsTableBody);
         const noteRulesToUpdate = getChangedRules(existingNotesTableBody);
@@ -726,7 +727,6 @@ document.addEventListener('DOMContentLoaded', () => {
             allCategories.push(newCategory); // Instantly update local state
             
             renderCategoryList(); // Re-render the category list
-            renderExistingRulesTables(); // This will rebuild the dropdowns in the rules tables
             
             newCategoryNameInput.value = '';
             l1MonitorCheckbox.checked = false;
@@ -758,11 +758,9 @@ document.addEventListener('DOMContentLoaded', () => {
             categorizationReportUploader.disabled = !hasRequiredCols; 
             if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.');
             
-            const categoryTeamMap = new Map(allCategories.map(c => [c.id, { team_id: c.team_id, team_name: c.team_name, category_name: c.category_name }]));
-            
             const getRuleDetails = (rule) => {
-                const catDetails = categoryTeamMap.get(rule.category_id);
-                return catDetails ? { ...rule, ...catDetails } : null;
+                const cat = allCategories.find(c => c.id === rule.category_id);
+                return cat ? { ...rule, team_name: cat.team_name, category_name: cat.category_name } : null;
             };
 
             const detailedEditRules = activeEditRules.map(getRuleDetails).filter(Boolean);
@@ -836,8 +834,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     clientRuleFilter.addEventListener('change', async (e) => {
         const configId = e.target.value;
-        if (configId === 'all') {
-            renderExistingRulesTables([], []); // Clear tables
+        if (!configId) {
+            renderExistingRulesTables([], []); // Clear tables if nothing is selected
             return;
         }
         
