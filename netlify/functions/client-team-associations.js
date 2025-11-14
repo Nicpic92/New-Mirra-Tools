@@ -1,9 +1,6 @@
 // --- START OF FILE client-team-associations.js ---
 
-const { Pool } = require('pg');
-
-// Create the connection pool ONCE, outside the handler
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = require('./database.js'); // THE FIX: Use the shared pool
 
 exports.handler = async function(event) {
     const { config_id } = event.queryStringParameters || {};
@@ -24,7 +21,6 @@ exports.handler = async function(event) {
                     return { statusCode: 400, body: 'Missing config_id or team_ids array' };
                 }
 
-                // Use a client from the pool for transactions
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
@@ -39,9 +35,9 @@ exports.handler = async function(event) {
                     await client.query('COMMIT');
                 } catch (e) {
                     await client.query('ROLLBACK');
-                    throw e; // Rethrow the error to be caught by the outer catch block
+                    throw e;
                 } finally {
-                    client.release(); // Release the client back to the pool
+                    client.release();
                 }
                 return { statusCode: 201, body: JSON.stringify({ message: 'Associations saved.' }) };
             }
@@ -49,7 +45,7 @@ exports.handler = async function(event) {
                 return { statusCode: 405, body: 'Method Not Allowed' };
         }
     } catch (error) {
-        console.error('Database error:', error);
+        console.error('Database error in client-team-associations.js:', error);
         return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
     }
 };
