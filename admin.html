@@ -372,10 +372,10 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { console.error('Error loading configurations:', error); }
     }
     
-    async function loadTeams() { const response = await fetch(TEAMS_API); allTeams = await response.json(); }
-    async function loadCategories() { const response = await fetch(CATEGORIES_API); allCategories = await response.json(); }
-    async function loadRules() { const [editRes, noteRes] = await Promise.all([ fetch(`${RULES_API}?type=edit`), fetch(`${RULES_API}?type=note`) ]); existingEditRules = await editRes.json(); existingNoteRules = await noteRes.json(); }
-    async function loadClientTeamAssociations() { const response = await fetch(CLIENT_TEAM_API); allClientTeamAssociations = await response.json(); }
+    async function loadTeams() { const response = await fetch(TEAMS_API); if (response.ok) allTeams = await response.json(); }
+    async function loadCategories() { const response = await fetch(CATEGORIES_API); if (response.ok) allCategories = await response.json(); }
+    async function loadRules() { const [editRes, noteRes] = await Promise.all([ fetch(`${RULES_API}?type=edit`), fetch(`${RULES_API}?type=note`) ]); if(editRes.ok) existingEditRules = await editRes.json(); if(noteRes.ok) existingNoteRules = await noteRes.json(); }
+    async function loadClientTeamAssociations() { const response = await fetch(CLIENT_TEAM_API); if(response.ok) allClientTeamAssociations = await response.json(); }
     
     async function loadAllData() {
         try {
@@ -606,9 +606,58 @@ document.addEventListener('DOMContentLoaded', () => {
     configForm.addEventListener('submit', async (e) => { e.preventDefault(); const columnMappings = {}; mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; }); const id = configIdInput.value; const pdfConfig = serializePdfLayout(); const config_data = { clientName: clientNameInput.value, columnMappings, pdfConfig }; const method = id ? 'PUT' : 'POST'; const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API; try { const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) }); if(!res.ok) throw new Error(`Server responded with ${res.status}`); alert(`Configuration ${id ? 'updated' : 'created'} successfully!`); clearConfigForm(); await loadAllData(); } catch (error) { console.error('Failed to save config:', error); alert(`Failed to save configuration: ${error.message}`); } });
     reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const sheet = workbook.Sheets[workbook.SheetNames[0]]; if (!sheet) throw new Error("Sheet not found."); const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }); detectedHeaders = (json[0] || []).filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file. Please ensure the first row contains the column names."); return; } renderMappingUI(); } catch (err) { alert(`Error processing file: ${err.message}`); console.error(err); } }; reader.readAsArrayBuffer(file); });
     clearBtn.addEventListener('click', clearConfigForm);
-    newTeamForm.addEventListener('submit', async (e) => { e.preventDefault(); const name = newTeamNameInput.value.trim(); if (!name) return; try { await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) }); newTeamNameInput.value = ''; await loadAllData(); } catch (error) { alert('Failed to add team. It may already exist.'); } });
-    newCategoryForm.addEventListener('submit', async (e) => { e.preventDefault(); const category_name = newCategoryNameInput.value.trim(); const team_id = parseInt(teamCategorySelect.value, 10); const send_to_l1_monitor = l1MonitorCheckbox.checked; if (!category_name || !team_id) return alert('Please select a team and enter a category name.'); try { await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) }); newCategoryNameInput.value = ''; l1MonitorCheckbox.checked = false; await loadAllData(); } catch (error) { alert('Failed to add category. It may already exist.'); } });
     
+    newTeamForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const name = newTeamNameInput.value.trim();
+        if (!name) return;
+        try {
+            const response = await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) });
+            if (!response.ok) throw new Error('Failed to add team. It may already exist.');
+            
+            const newTeam = await response.json();
+            allTeams.push(newTeam); // Instantly update local state
+            
+            renderTeamList(); // Re-render the list
+            populateTeamDropdown(); // Re-render the dropdown
+            
+            newTeamNameInput.value = '';
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+
+    newCategoryForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const category_name = newCategoryNameInput.value.trim();
+        const team_id = parseInt(teamCategorySelect.value, 10);
+        const send_to_l1_monitor = l1MonitorCheckbox.checked;
+        if (!category_name || !team_id) return alert('Please select a team and enter a category name.');
+        try {
+            const response = await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) });
+            if (!response.ok) throw new Error('Failed to add category. It may already exist.');
+
+            const newCategory = await response.json();
+            
+            // Enrich the new category with the team name for immediate UI updates
+            const team = allTeams.find(t => t.id === newCategory.team_id);
+            if (team) {
+                newCategory.team_name = team.team_name;
+            }
+            
+            allCategories.push(newCategory); // Instantly update local state
+            
+            renderCategoryList(); // Re-render the category list
+            renderExistingRulesTables(); // This will rebuild the dropdowns in the rules tables
+            
+            newCategoryNameInput.value = '';
+            l1MonitorCheckbox.checked = false;
+
+        } catch (error) {
+            alert(error.message);
+        }
+    });
+
     categorizationConfigSelector.addEventListener('change', () => { 
         const selectedId = parseInt(categorizationConfigSelector.value, 10); 
         const config = (allClientConfigs || []).find(c => c.id === selectedId); 
@@ -720,4 +769,4 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 </script>
 </body>
-</html>```
+</html>
