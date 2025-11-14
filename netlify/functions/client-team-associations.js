@@ -58,4 +58,3 @@ exports.handler = async function(event) {
         await db.end();
     }
 };
-// --- END OF FILE client-team-associations.js ---
