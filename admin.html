@@ -1,72 +1,3 @@
-// --- START OF FILE client-team-associations.js ---
-
-const { Pool } = require('pg');
-
-const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
-
-exports.handler = async function(event) {
-    const db = getDb();
-    const { config_id } = event.queryStringParameters || {};
-
-    try {
-        switch (event.httpMethod) {
-            case 'GET': {
-                if (!config_id) {
-                    // Get all associations if no specific config_id is provided
-                    const result = await db.query('SELECT config_id, team_id FROM client_team_associations;');
-                    return { statusCode: 200, body: JSON.stringify(result.rows) };
-                }
-                // Get associations for a specific config_id
-                const result = await db.query('SELECT team_id FROM client_team_associations WHERE config_id = $1;', [config_id]);
-                return { statusCode: 200, body: JSON.stringify(result.rows.map(r => r.team_id)) };
-            }
-            case 'POST': {
-                const { config_id, team_ids } = JSON.parse(event.body);
-                if (!config_id || !Array.isArray(team_ids)) {
-                    return { statusCode: 400, body: 'Missing config_id or team_ids array' };
-                }
-
-                const client = await db.connect();
-                try {
-                    await client.query('BEGIN');
-                    // First, delete existing associations for this client
-                    await client.query('DELETE FROM client_team_associations WHERE config_id = $1;', [config_id]);
-                    
-                    // Then, insert the new ones
-                    if (team_ids.length > 0) {
-                        const values = team_ids.map(team_id => `(${parseInt(config_id)}, ${parseInt(team_id)})`).join(',');
-                        const sql = `INSERT INTO client_team_associations (config_id, team_id) VALUES ${values};`;
-                        await client.query(sql);
-                    }
-
-                    await client.query('COMMIT');
-                } catch (e) {
-                    await client.query('ROLLBACK');
-                    throw e;
-                } finally {
-                    client.release();
-                }
-                return { statusCode: 201, body: JSON.stringify({ message: 'Associations saved.' }) };
-            }
-            default:
-                return { statusCode: 405, body: 'Method Not Allowed' };
-        }
-    } catch (error) {
-        console.error('Database error:', error);
-        return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
-    } finally {
-        await db.end();
-    }
-};
-// --- END OF FILE client-team-associations.js ---```
-
----
-
-### **3. Frontend Admin Page: `admin.html`**
-
-This is the fully updated `admin.html` file. It includes the new UI for managing client-team associations and the requested client filter on the "Manage Existing Rules" tab.
-
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -282,7 +213,7 @@ This is the fully updated `admin.html` file. It includes the new UI for managing
                             <!-- W9 TRIAGE PANE -->
                             <div class="tab-pane fade" id="triage-pane" role="tabpanel">
                                 <h5>W9 Triage and Assignment Tool</h5>
-                                <p>Use this tool to review claims in Management Review for W9 issues. The uploaded report will be used to determine which providers have a W9 on file and suggest the correct assignment.</p>
+                                <p>Compare the main claims report against the MRW9 report to identify and assign W9-related claims in Management Review.</p>
                                 
                                 <div class="row g-4">
                                     <div class="col-md-4">
@@ -291,8 +222,11 @@ This is the fully updated `admin.html` file. It includes the new UI for managing
                                             <select class="form-select" id="triageConfigSelector"><option value="">Select a configuration...</option></select>
                                         </div>
                                         <div id="triageStep2" class="triage-step mt-3">
-                                            <h6>Step 2: Upload MRW9 Report</h6>
-                                            <p class="small text-muted">This single report will be used for both analysis and triage.</p>
+                                            <h6>Step 2: Upload Main Claims Report</h6>
+                                            <input class="form-control" type="file" id="triageMainUploader" accept=".xlsx,.csv" disabled>
+                                        </div>
+                                        <div id="triageStep3" class="triage-step mt-3">
+                                            <h6>Step 3: Upload MRW9 Report</h6>
                                             <input class="form-control" type="file" id="triageMrw9Uploader" accept=".xlsx,.csv" disabled>
                                         </div>
                                     </div>
@@ -395,14 +329,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const clientRuleFilter = document.getElementById('clientRuleFilter');
 
     // W9 Triage DOM Elements
-    const triageConfigSelector = document.getElementById('triageConfigSelector'), triageMrw9Uploader = document.getElementById('triageMrw9Uploader'), triageResultsContainer = document.getElementById('triageResultsContainer'), triagePlaceholder = document.getElementById('triagePlaceholder'), triageTableBody = document.getElementById('triageTableBody'), generateAssignmentReportsBtn = document.getElementById('generateAssignmentReportsBtn'), triageSummary = document.getElementById('triageSummary');
+    const triageConfigSelector = document.getElementById('triageConfigSelector'), triageMainUploader = document.getElementById('triageMainUploader'), triageMrw9Uploader = document.getElementById('triageMrw9Uploader'), triageResultsContainer = document.getElementById('triageResultsContainer'), triagePlaceholder = document.getElementById('triagePlaceholder'), triageTableBody = document.getElementById('triageTableBody'), generateAssignmentReportsBtn = document.getElementById('generateAssignmentReportsBtn'), triageSummary = document.getElementById('triageSummary');
 
     // Global State
     let allTeams = [], allCategories = [], allClientConfigs = [], allClientTeamAssociations = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {}, currentCustomWidgets = [];
     let existingEditRules = [], existingNoteRules = [], triageCategorizationConfig = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
     // Triage State
-    let triageColumnMappings = {}, triageClaimsData = [];
+    let triageColumnMappings = {}, triageClaimsData = [], mainReportClaimIds = new Set();
 
     const standardFields = [
         { key: 'claimId', displayName: 'Claim ID / Number', required: true, type: 'string' }, { key: 'age', displayName: 'Age (in days)', required: true, type: 'number' }, { key: 'netPayment', displayName: 'Net Payment Amount', required: true, type: 'number' }, { key: 'state', displayName: 'Claim State', required: true, type: 'string' }, { key: 'status', displayName: 'Claim Status', required: true, type: 'string' }, { key: 'networkStatus', displayName: 'Network Status', required: true, type: 'string' }, { key: 'providerName', displayName: 'Billing Provider Name', required: true, type: 'string' }, { key: 'edit', displayName: 'Claim Edits', required: true, type: 'string' }, { key: 'notes', displayName: 'Claim Notes', required: true, type: 'string' }, { key: 'totalCharges', displayName: 'Total Billed Amount', required: false, type: 'number' }, { key: 'dsnp', displayName: 'DSNP Status', required: false, type: 'string' }, { key: 'payer', displayName: 'Payer Name', required: false, type: 'string' }, { key: 'claimCategory', displayName: 'Category', required: false, type: 'string' }, { key: 'claimType', displayName: 'Claim Type', required: false, type: 'string' }, { key: 'receivedDate', displayName: 'Received Date', required: false, type: 'date' }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID', required: false, type: 'string' }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI', required: false, type: 'string' }, { key: 'patientName', displayName: 'Patient Name', required: false, type: 'string' }, { key: 'subscriberId', displayName: 'Subscriber ID', required: false, type: 'string' }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name', required: false, type: 'string' }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI', required: false, type: 'string' }, { key: 'dosFrom', displayName: 'Date of Service (From)', required: false, type: 'date' }, { key: 'dosTo', displayName: 'Date of Service (To)', required: false, type: 'date' }, { key: 'cleanAge', displayName: 'Clean Age', required: false, type: 'number' }, { key: 'pbpName', displayName: 'PBP Name', required: false, type: 'string' }, { key: 'planName', displayName: 'Plan Name', required: false, type: 'string' }, { key: 'activityLog', displayName: 'Activity Log Description', required: false, type: 'string' }, { key: 'activityUser', displayName: 'Activity Performed By', required: false, type: 'string' }, { key: 'activityDate', displayName: 'Activity Performed On', required: false, type: 'date' }
@@ -417,7 +351,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(CONFIG_API);
             allClientConfigs = await response.json();
-            window.allClientConfigs = allClientConfigs; // For legacy access if needed
+            window.allClientConfigs = allClientConfigs;
             configList.innerHTML = allClientConfigs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
             
             const selectors = [categorizationConfigSelector, triageConfigSelector, clientTeamConfigSelector, clientRuleFilter];
@@ -471,7 +405,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTeamList();
             populateTeamDropdown();
             renderCategoryList();
-            renderExistingRulesTables(); // Initial render with all rules
+            renderExistingRulesTables();
         } catch (error) { console.error("Failed to load initial admin data:", error); alert("Error loading administrative data. Please check the console and refresh the page."); }
     }
 
@@ -498,7 +432,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- RULE MANAGEMENT LOGIC ---
     function processUploadedReport(data) { const detectedEdits = new Set(), detectedNotes = new Set(); const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization; data.forEach(row => { const editValue = (row[editColumn] || '').toString().trim(); if (editValue && !existingEditRules.some(r => r.text === editValue)) detectedEdits.add(editValue); const noteValue = (row[notesColumn] || '').toString().trim(); if (noteValue && !existingNoteRules.some(r => r.text === noteValue)) detectedNotes.add(noteValue); }); const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b)); const sortedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b)); uncategorizedEditsTable.innerHTML = ''; sortedEdits.forEach(text => { const row = uncategorizedEditsTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`; row.cells[0].firstChild.dataset.text = text; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; }); uncategorizedNotesTable.innerHTML = ''; sortedNotes.forEach(noteText => { const row = uncategorizedNotesTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`; row.cells[0].firstChild.dataset.text = noteText; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; }); const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0; rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none'; noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file.'; noRulesFoundDiv.style.display = hasRules ? 'none' : 'block'; }
     function createCategoryDropdown(selectedId = '') { const select = document.createElement('select'); select.className = 'form-select form-select-sm'; select.add(new Option('Select category...', '')); allCategories.sort((a,b) => (a.team_name || 'Z').localeCompare(b.team_name || 'Z') || a.category_name.localeCompare(b.category_name)).forEach(cat => select.add(new Option(`${cat.team_name || 'Unassigned'} -> ${cat.category_name}`, cat.id))); if (selectedId) { select.value = selectedId; } return select; }
-    async function saveNewRules() { const getRulesFromTable = (table) => Array.from(table.rows).map(row => ({ row: row, text: row.querySelector('.rule-text').dataset.text, category_id: row.cells[1].querySelector('select').value })).filter(rule => rule.category_id); const editRulesToSave = getRulesFromTable(uncategorizedEditsTable); const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable); if (editRulesToSave.length === 0 && noteRulesToSave.length === 0) return alert('No new rules were assigned to a category.'); try { const bodyEdit = JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest)); const bodyNote = JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest)); await Promise.all([ editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: bodyEdit }) : Promise.resolve(), noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: bodyNote }) : Promise.resolve() ]); alert('Rules saved successfully!'); editRulesToSave.forEach(rule => rule.row.remove()); noteRulesToSave.forEach(rule => rule.row.remove()); await loadRules(); renderExistingRulesTables(); if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) { rulesAssignmentContainer.style.display = 'none'; noRulesFoundDiv.textContent = 'Upload a file to begin.'; noRulesFoundDiv.style.display = 'block'; } } catch (error) { alert(`Failed to save rules: ${error.message}`); } }
+    async function saveNewRules() { const getRulesFromTable = (table) => Array.from(table.rows).map(row => ({ row: row, text: row.querySelector('.rule-text').dataset.text, category_id: row.cells[1].querySelector('select').value })).filter(rule => rule.category_id); const editRulesToSave = getRulesFromTable(uncategorizedEditsTable); const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable); if (editRulesToSave.length === 0 && noteRulesToSave.length === 0) return alert('No new rules were assigned to a category.'); try { const bodyEdit = JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest)); const bodyNote = JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest)); await Promise.all([ editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: bodyEdit }) : Promise.resolve(), noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: bodyNote }) : Promise.resolve() ]); alert('Rules saved successfully!'); editRulesToSave.forEach(rule => rule.row.remove()); noteRulesToSave.forEach(rule => rule.row.remove()); await loadAllData(); if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) { rulesAssignmentContainer.style.display = 'none'; noRulesFoundDiv.textContent = 'Upload a file to begin.'; noRulesFoundDiv.style.display = 'block'; } } catch (error) { alert(`Failed to save rules: ${error.message}`); } }
     
     function renderExistingRulesTables(filteredTeamIds = null) {
         const renderTable = (tableBody, rules) => {
@@ -523,7 +457,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTable(existingNotesTableBody, existingNoteRules);
     }
 
-    async function deleteRule(type, text) { if (!confirm(`Are you sure you want to delete this rule?\n\nTYPE: ${type}\nRULE: ${text}`)) return; try { const response = await fetch(`${RULES_API}?type=${type}`, { method: 'DELETE', body: JSON.stringify({ text }) }); if (!response.ok) throw new Error('Delete failed on server.'); await loadRules(); renderExistingRulesTables(); alert('Rule deleted.'); } catch(error) { alert(`Error deleting rule: ${error.message}`); } };
+    async function deleteRule(type, text) { if (!confirm(`Are you sure you want to delete this rule?\n\nTYPE: ${type}\nRULE: ${text}`)) return; try { const response = await fetch(`${RULES_API}?type=${type}`, { method: 'DELETE', body: JSON.stringify({ text }) }); if (!response.ok) throw new Error('Delete failed on server.'); await loadAllData(); alert('Rule deleted.'); } catch(error) { alert(`Error deleting rule: ${error.message}`); } };
     async function saveExistingRuleChanges() { const getChangedRules = (tableBody) => Array.from(tableBody.rows).map(row => ({ text: row.dataset.text, category_id: row.querySelector('select').value })); const editRulesToUpdate = getChangedRules(existingEditsTableBody); const noteRulesToUpdate = getChangedRules(existingNotesTableBody); try { await Promise.all([ editRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: JSON.stringify(editRulesToUpdate) }) : Promise.resolve(), noteRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: JSON.stringify(noteRulesToUpdate) }) : Promise.resolve() ]); alert('Existing rule changes saved successfully!'); await loadAllData(); } catch(error) { alert(`Error saving changes: ${error.message}`); } }
     function clearConfigForm() { configForm.reset(); configIdInput.value = ''; mappingSection.style.display = 'none'; mappingAlert.classList.add('d-none'); mappingsForEditing = {}; reportUploader.value = ''; currentCustomWidgets = []; populateAvailableWidgets(); renderPdfLayout({}); }
 
@@ -533,6 +467,26 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- W9 TRIAGE LOGIC ---
     const getTriageVal = (claim, standardKey) => { const mappedKey = triageColumnMappings[standardKey]; return (mappedKey && claim[mappedKey] !== undefined) ? claim[mappedKey] : undefined; };
     function getTriageClaimCategory(claim) { const notes = (getTriageVal(claim, 'notes') || '').toLowerCase(); const edit = getTriageVal(claim, 'edit'); if (edit && triageCategorizationConfig.editRulesMap.has(edit)) { return triageCategorizationConfig.editRulesMap.get(edit); } if (notes) { for (const [keyword, rule] of triageCategorizationConfig.noteRulesMap.entries()) { if (notes.includes(keyword)) return rule; } } return { category: 'Needs Triage', teamName: 'Needs Assignment' }; }
+    
+    async function handleTriageMainFile(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        try {
+            const mainData = await readFile(file);
+            mainReportClaimIds.clear();
+            mainData.forEach(row => {
+                const claimId = getTriageVal(row, 'claimId');
+                if (claimId) {
+                    mainReportClaimIds.add(claimId.toString());
+                }
+            });
+            alert(`Loaded ${mainReportClaimIds.size} claims from the main report.`);
+            triageMrw9Uploader.disabled = false;
+            document.getElementById('triageStep3').classList.add('active');
+        } catch (error) {
+            alert(`Error processing Main Claims Report: ${error.message}`);
+        }
+    }
     
     async function handleTriageMRW9File(event) {
         const file = event.target.files[0];
@@ -559,6 +513,10 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const filteredClaims = mrw9Data.filter(claim => {
+                const claimId = getTriageVal(claim, 'claimId');
+                if (!claimId || !mainReportClaimIds.has(claimId.toString())) {
+                    return false; // Exclude if not in the main report
+                }
                 const status = (getTriageVal(claim, 'status') || '').toUpperCase();
                 const categoryInfo = getTriageClaimCategory(claim);
                 const teamName = categoryInfo.teamName;
@@ -586,7 +544,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTriageTable() {
         if (triageClaimsData.length === 0) {
-            triageSummary.textContent = 'No claims matching the triage criteria (Status: Management Review, Team: Provider Ops, Category: *W9*) were found in the uploaded file.';
+            triageSummary.textContent = 'No claims matching the triage criteria (i.e., present in both reports, with Status: Management Review, Team: Provider Ops, Category: *W9*) were found.';
         } else {
             triageSummary.textContent = `Found ${triageClaimsData.length} claims to triage. Default assignments have been suggested below.`;
         }
@@ -718,13 +676,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const selectedConfig = (allClientConfigs || []).find(c => c.id === selectedId);
         if (selectedConfig?.config_data?.columnMappings) {
             triageColumnMappings = selectedConfig.config_data.columnMappings;
-            triageMrw9Uploader.disabled = false;
+            triageMainUploader.disabled = false;
             document.getElementById('triageStep2').classList.add('active');
         } else {
             triageColumnMappings = {};
+            triageMainUploader.disabled = true;
             triageMrw9Uploader.disabled = true;
         }
     });
+    triageMainUploader.addEventListener('change', handleTriageMainFile);
     triageMrw9Uploader.addEventListener('change', handleTriageMRW9File);
     generateAssignmentReportsBtn.addEventListener('click', generateTriageReports);
 
