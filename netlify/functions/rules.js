@@ -1,13 +1,12 @@
 // --- START OF FILE rules.js ---
 
-// This function handles CRUD operations for categorization rules.
 const { Pool } = require('pg');
 
-const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
+// Create the connection pool ONCE, outside the handler
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
 exports.handler = async function(event) {
-    const db = getDb();
-    const { type } = event.queryStringParameters; // Expects 'edit' or 'note'
+    const { type } = event.queryStringParameters;
 
     if (!['edit', 'note'].includes(type)) {
         return { statusCode: 400, body: 'Invalid rule type specified.' };
@@ -23,7 +22,7 @@ exports.handler = async function(event) {
                              FROM ${tableName} r
                              JOIN claim_categories c ON r.category_id = c.id
                              LEFT JOIN teams t ON c.team_id = t.id;`;
-                const result = await db.query(sql);
+                const result = await pool.query(sql);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
@@ -31,7 +30,7 @@ exports.handler = async function(event) {
                 if (!Array.isArray(rules) || rules.length === 0) {
                     return { statusCode: 400, body: 'Request body must be a non-empty array.' };
                 }
-                const client = await db.connect();
+                const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
                     const sql = `
@@ -54,14 +53,13 @@ exports.handler = async function(event) {
                 }
                 return { statusCode: 201, body: JSON.stringify({ message: 'Rules saved.' }) };
             }
-            // NEW DELETE METHOD
             case 'DELETE': {
                 const { text } = JSON.parse(event.body);
                 if (!text) {
                     return { statusCode: 400, body: 'Missing rule text to delete.' };
                 }
                 const sql = `DELETE FROM ${tableName} WHERE ${textField} = $1;`;
-                await db.query(sql, [text]);
+                await pool.query(sql, [text]);
                 return { statusCode: 200, body: JSON.stringify({ message: 'Rule deleted.' }) };
             }
             default:
@@ -70,7 +68,5 @@ exports.handler = async function(event) {
     } catch (error) {
         console.error('Database error:', error);
         return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
-    } finally {
-        await db.end();
     }
 };
