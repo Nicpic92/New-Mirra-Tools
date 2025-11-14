@@ -1,7 +1,6 @@
-const { Pool } = require('pg');
+// --- START OF FILE teams.js ---
 
-// Create the connection pool ONCE, outside the handler
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = require('./database.js'); // THE FIX: Use the shared pool
 
 exports.handler = async function(event) {
     const { id } = event.queryStringParameters || {};
@@ -30,7 +29,7 @@ exports.handler = async function(event) {
                 return { statusCode: 405, body: 'Method Not Allowed' };
         }
     } catch (error) {
-        console.error('Database error:', error);
+        console.error('Database error in teams.js:', error);
         return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
     }
 };
