@@ -1,3 +1,5 @@
+// --- START OF FILE categories.js ---
+
 const { Pool } = require('pg');
 
 const getDb = () => new Pool({ connectionString: process.env.DATABASE_URL });
@@ -9,9 +11,9 @@ exports.handler = async function(event) {
     try {
         switch (event.httpMethod) {
             case 'GET': {
-                // Join with teams table to get the team name associated with each category
+                // Join with teams table to get the team name and new L1 flag
                 const sql = `
-                    SELECT c.id, c.category_name, c.team_id, t.team_name
+                    SELECT c.id, c.category_name, c.team_id, t.team_name, c.send_to_l1_monitor
                     FROM claim_categories c
                     LEFT JOIN teams t ON c.team_id = t.id
                     ORDER BY t.team_name, c.category_name;
@@ -20,13 +22,13 @@ exports.handler = async function(event) {
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
-                // Now requires both category_name and the team_id it belongs to
-                const { category_name, team_id } = JSON.parse(event.body);
+                // Now requires category_name, team_id, and the new L1 flag
+                const { category_name, team_id, send_to_l1_monitor } = JSON.parse(event.body);
                 if (!category_name || !team_id) {
                     return { statusCode: 400, body: 'Missing category_name or team_id' };
                 }
-                const sql = 'INSERT INTO claim_categories (category_name, team_id) VALUES ($1, $2) RETURNING *;';
-                const result = await db.query(sql, [category_name, team_id]);
+                const sql = 'INSERT INTO claim_categories (category_name, team_id, send_to_l1_monitor) VALUES ($1, $2, $3) RETURNING *;';
+                const result = await db.query(sql, [category_name, team_id, send_to_l1_monitor || false]);
                 return { statusCode: 201, body: JSON.stringify(result.rows[0]) };
             }
             case 'DELETE': {
@@ -44,3 +46,4 @@ exports.handler = async function(event) {
         await db.end();
     }
 };
+// --- END OF FILE categories.js ---
