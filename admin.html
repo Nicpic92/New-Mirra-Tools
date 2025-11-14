@@ -1,3 +1,5 @@
+--- START OF FILE admin.html ---
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -315,7 +317,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Global State
     let allTeams = [], allCategories = [], allClientConfigs = [], allClientTeamAssociations = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {}, currentCustomWidgets = [];
-    let existingEditRules = [], existingNoteRules = [];
+    // These are no longer loaded globally. They will be populated on-demand.
+    let activeEditRules = [], activeNoteRules = [];
     let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
     // Triage State
@@ -374,12 +377,24 @@ document.addEventListener('DOMContentLoaded', () => {
     
     async function loadTeams() { const response = await fetch(TEAMS_API); if (response.ok) allTeams = await response.json(); }
     async function loadCategories() { const response = await fetch(CATEGORIES_API); if (response.ok) allCategories = await response.json(); }
-    async function loadRules() { const [editRes, noteRes] = await Promise.all([ fetch(`${RULES_API}?type=edit`), fetch(`${RULES_API}?type=note`) ]); if(editRes.ok) existingEditRules = await editRes.json(); if(noteRes.ok) existingNoteRules = await noteRes.json(); }
+    async function loadRulesForConfig(configId) {
+        if (!configId) {
+            activeEditRules = [];
+            activeNoteRules = [];
+            return;
+        }
+        const [editRes, noteRes] = await Promise.all([
+            fetch(`${RULES_API}?type=edit&config_id=${configId}`),
+            fetch(`${RULES_API}?type=note&config_id=${configId}`)
+        ]);
+        if (editRes.ok) activeEditRules = await editRes.json();
+        if (noteRes.ok) activeNoteRules = await noteRes.json();
+    }
     async function loadClientTeamAssociations() { const response = await fetch(CLIENT_TEAM_API); if(response.ok) allClientTeamAssociations = await response.json(); }
     
     async function loadAllData() {
         try {
-            await Promise.all([ loadTeams(), loadCategories(), loadRules(), loadConfigurations(), loadClientTeamAssociations() ]);
+            await Promise.all([ loadTeams(), loadCategories(), loadConfigurations(), loadClientTeamAssociations() ]);
             renderTeamList();
             populateTeamDropdown();
             renderCategoryList();
@@ -408,35 +423,98 @@ document.addEventListener('DOMContentLoaded', () => {
     function serializePdfLayout() { const sections = Array.from(reportLayoutList.querySelectorAll('.pdf-widget')).map(li => { const widgetId = li.dataset.widgetId; const allWidgets = [...availablePdfWidgets, ...currentCustomWidgets]; const baseWidget = allWidgets.find(w => w.id === widgetId); const customTitle = li.querySelector('input').value.trim(); const definition = baseWidget.type === 'custom_table' ? baseWidget : null; return { id: widgetId, type: baseWidget.type, title: customTitle || baseWidget.name, definition }; }); return { reportTitle: pdfReportTitleInput.value.trim() || '{clientName} Daily Summary Report {date}', customWidgets: currentCustomWidgets, sections }; }
 
     // --- RULE MANAGEMENT LOGIC ---
-    function processUploadedReport(data) { const detectedEdits = new Set(), detectedNotes = new Set(); const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization; data.forEach(row => { const editValue = (row[editColumn] || '').toString().trim(); if (editValue && !existingEditRules.some(r => r.text === editValue)) detectedEdits.add(editValue); const noteValue = (row[notesColumn] || '').toString().trim(); if (noteValue && !existingNoteRules.some(r => r.text === noteValue)) detectedNotes.add(noteValue); }); const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b)); const sortedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b)); uncategorizedEditsTable.innerHTML = ''; sortedEdits.forEach(text => { const row = uncategorizedEditsTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`; row.cells[0].firstChild.dataset.text = text; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; }); uncategorizedNotesTable.innerHTML = ''; sortedNotes.forEach(noteText => { const row = uncategorizedNotesTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`; row.cells[0].firstChild.dataset.text = noteText; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; }); const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0; rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none'; noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file.'; noRulesFoundDiv.style.display = hasRules ? 'none' : 'block'; }
+    function processUploadedReport(data) {
+        const detectedEdits = new Set(), detectedNotes = new Set();
+        const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization;
+        data.forEach(row => {
+            const editValue = (row[editColumn] || '').toString().trim();
+            if (editValue && !activeEditRules.some(r => r.text === editValue)) detectedEdits.add(editValue);
+            const noteValue = (row[notesColumn] || '').toString().trim();
+            if (noteValue && !activeNoteRules.some(r => r.text === noteValue)) detectedNotes.add(noteValue);
+        });
+        const sortedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b));
+        const sortedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b));
+        uncategorizedEditsTable.innerHTML = '';
+        sortedEdits.forEach(text => { const row = uncategorizedEditsTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${text}">${text}</div>`; row.cells[0].firstChild.dataset.text = text; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; });
+        uncategorizedNotesTable.innerHTML = '';
+        sortedNotes.forEach(noteText => { const row = uncategorizedNotesTable.insertRow(); row.insertCell().innerHTML = `<div class="rule-text" title="${noteText}">${noteText}</div>`; row.cells[0].firstChild.dataset.text = noteText; row.insertCell().innerHTML = createCategoryDropdown().outerHTML; });
+        const hasRules = sortedEdits.length > 0 || sortedNotes.length > 0;
+        rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none';
+        noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file.';
+        noRulesFoundDiv.style.display = hasRules ? 'none' : 'block';
+    }
     function createCategoryDropdown(selectedId = '') { const select = document.createElement('select'); select.className = 'form-select form-select-sm'; select.add(new Option('Select category...', '')); allCategories.sort((a,b) => (a.team_name || 'Z').localeCompare(b.team_name || 'Z') || a.category_name.localeCompare(b.category_name)).forEach(cat => select.add(new Option(`${cat.team_name || 'Unassigned'} -> ${cat.category_name}`, cat.id))); if (selectedId) { select.value = selectedId; } return select; }
-    async function saveNewRules() { const getRulesFromTable = (table) => Array.from(table.rows).map(row => ({ row: row, text: row.querySelector('.rule-text').dataset.text, category_id: row.cells[1].querySelector('select').value })).filter(rule => rule.category_id); const editRulesToSave = getRulesFromTable(uncategorizedEditsTable); const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable); if (editRulesToSave.length === 0 && noteRulesToSave.length === 0) return alert('No new rules were assigned to a category.'); try { const bodyEdit = JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest)); const bodyNote = JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest)); await Promise.all([ editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: bodyEdit }) : Promise.resolve(), noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: bodyNote }) : Promise.resolve() ]); alert('Rules saved successfully!'); editRulesToSave.forEach(rule => rule.row.remove()); noteRulesToSave.forEach(rule => rule.row.remove()); await loadAllData(); if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) { rulesAssignmentContainer.style.display = 'none'; noRulesFoundDiv.textContent = 'Upload a file to begin.'; noRulesFoundDiv.style.display = 'block'; } } catch (error) { alert(`Failed to save rules: ${error.message}`); } }
+    async function saveNewRules() {
+        const configId = categorizationConfigSelector.value;
+        if (!configId) return alert('Cannot save rules without a selected configuration.');
+        const getRulesFromTable = (table) => Array.from(table.rows).map(row => ({ row: row, text: row.querySelector('.rule-text').dataset.text, category_id: row.cells[1].querySelector('select').value })).filter(rule => rule.category_id);
+        const editRulesToSave = getRulesFromTable(uncategorizedEditsTable);
+        const noteRulesToSave = getRulesFromTable(uncategorizedNotesTable);
+        if (editRulesToSave.length === 0 && noteRulesToSave.length === 0) return alert('No new rules were assigned to a category.');
+        try {
+            const bodyEdit = JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest));
+            const bodyNote = JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest));
+            await Promise.all([
+                editRulesToSave.length > 0 ? fetch(`${RULES_API}?type=edit&config_id=${configId}`, { method: 'POST', body: bodyEdit }) : Promise.resolve(),
+                noteRulesToSave.length > 0 ? fetch(`${RULES_API}?type=note&config_id=${configId}`, { method: 'POST', body: bodyNote }) : Promise.resolve()
+            ]);
+            alert('Rules saved successfully!');
+            editRulesToSave.forEach(rule => rule.row.remove());
+            noteRulesToSave.forEach(rule => rule.row.remove());
+            await loadRulesForConfig(configId);
+            if (uncategorizedEditsTable.rows.length === 0 && uncategorizedNotesTable.rows.length === 0) {
+                rulesAssignmentContainer.style.display = 'none';
+                noRulesFoundDiv.textContent = 'Upload a file to begin.';
+                noRulesFoundDiv.style.display = 'block';
+            }
+        } catch (error) { alert(`Failed to save rules: ${error.message}`); }
+    }
     
-    function renderExistingRulesTables(filteredTeamIds = null) {
+    function renderExistingRulesTables(editRules = [], noteRules = []) {
         const renderTable = (tableBody, rules) => {
             tableBody.innerHTML = '';
-            let filteredRules = rules;
-            if (filteredTeamIds) {
-                const teamIdSet = new Set(filteredTeamIds);
-                const categoryTeamMap = new Map(allCategories.map(c => [c.id, c.team_id]));
-                filteredRules = rules.filter(rule => teamIdSet.has(categoryTeamMap.get(rule.category_id)));
-            }
-            
-            filteredRules.sort((a, b) => a.text.localeCompare(b.text)).forEach(rule => {
+            rules.sort((a, b) => a.text.localeCompare(b.text)).forEach(rule => {
                 const row = tableBody.insertRow();
                 row.dataset.text = rule.text;
+                row.dataset.id = rule.id;
                 row.insertCell().innerHTML = `<div class="rule-text" title="${rule.text}">${rule.text}</div>`;
                 const categoryCell = row.insertCell();
                 categoryCell.innerHTML = createCategoryDropdown(rule.category_id).outerHTML;
                 row.insertCell().innerHTML = `<button class="btn btn-danger btn-sm py-0 px-1 btn-delete-rule" data-type="${tableBody.id.includes('Edits') ? 'edit' : 'note'}" data-text="${encodeURIComponent(rule.text)}">&times;</button>`;
             });
         };
-        renderTable(existingEditsTableBody, existingEditRules);
-        renderTable(existingNotesTableBody, existingNoteRules);
+        renderTable(existingEditsTableBody, editRules);
+        renderTable(existingNotesTableBody, noteRules);
     }
 
-    async function deleteRule(type, text) { if (!confirm(`Are you sure you want to delete this rule?\n\nTYPE: ${type}\nRULE: ${text}`)) return; try { const response = await fetch(`${RULES_API}?type=${type}`, { method: 'DELETE', body: JSON.stringify({ text }) }); if (!response.ok) throw new Error('Delete failed on server.'); await loadAllData(); alert('Rule deleted.'); } catch(error) { alert(`Error deleting rule: ${error.message}`); } };
-    async function saveExistingRuleChanges() { const getChangedRules = (tableBody) => Array.from(tableBody.rows).map(row => ({ text: row.dataset.text, category_id: row.querySelector('select').value })); const editRulesToUpdate = getChangedRules(existingEditsTableBody); const noteRulesToUpdate = getChangedRules(existingNotesTableBody); try { await Promise.all([ editRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=edit`, { method: 'POST', body: JSON.stringify(editRulesToUpdate) }) : Promise.resolve(), noteRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=note`, { method: 'POST', body: JSON.stringify(noteRulesToUpdate) }) : Promise.resolve() ]); alert('Existing rule changes saved successfully!'); await loadAllData(); } catch(error) { alert(`Error saving changes: ${error.message}`); } }
+    async function deleteRule(type, text) {
+        const configId = clientRuleFilter.value;
+        if (!configId || configId === 'all') return alert('Please select a specific client to delete a rule from.');
+        if (!confirm(`Are you sure you want to delete this rule?\n\nTYPE: ${type}\nRULE: ${text}`)) return;
+        try {
+            const response = await fetch(`${RULES_API}?type=${type}&config_id=${configId}`, { method: 'DELETE', body: JSON.stringify({ text }) });
+            if (!response.ok) throw new Error('Delete failed on server.');
+            await loadRulesForConfig(configId);
+            renderExistingRulesTables(activeEditRules, activeNoteRules);
+            alert('Rule deleted.');
+        } catch(error) { alert(`Error deleting rule: ${error.message}`); }
+    };
+    async function saveExistingRuleChanges() {
+        const configId = clientRuleFilter.value;
+        if (!configId || configId === 'all') return alert('Please select a specific client to save changes for.');
+        const getChangedRules = (tableBody) => Array.from(tableBody.rows).map(row => ({ text: row.dataset.text, category_id: row.querySelector('select').value }));
+        const editRulesToUpdate = getChangedRules(existingEditsTableBody);
+        const noteRulesToUpdate = getChangedRules(existingNotesTableBody);
+        try {
+            await Promise.all([
+                editRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=edit&config_id=${configId}`, { method: 'POST', body: JSON.stringify(editRulesToUpdate) }) : Promise.resolve(),
+                noteRulesToUpdate.length > 0 ? fetch(`${RULES_API}?type=note&config_id=${configId}`, { method: 'POST', body: JSON.stringify(noteRulesToUpdate) }) : Promise.resolve()
+            ]);
+            alert('Existing rule changes saved successfully!');
+            await loadRulesForConfig(configId);
+            renderExistingRulesTables(activeEditRules, activeNoteRules);
+        } catch(error) { alert(`Error saving changes: ${error.message}`); }
+    }
     function clearConfigForm() { configForm.reset(); configIdInput.value = ''; mappingSection.style.display = 'none'; mappingAlert.classList.add('d-none'); mappingsForEditing = {}; reportUploader.value = ''; currentCustomWidgets = []; populateAvailableWidgets(); renderPdfLayout({}); }
 
     // --- GENERIC FILE READER UTILITY ---
@@ -658,8 +736,21 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    categorizationConfigSelector.addEventListener('change', () => { 
+    categorizationConfigSelector.addEventListener('change', async () => { 
         const selectedId = parseInt(categorizationConfigSelector.value, 10); 
+        if (!selectedId) {
+            categorizationReportUploader.disabled = true;
+            return;
+        }
+        
+        try {
+            await loadRulesForConfig(selectedId);
+        } catch (error) {
+            alert('Failed to load rules for this configuration.');
+            console.error(error);
+            return;
+        }
+
         const config = (allClientConfigs || []).find(c => c.id === selectedId); 
         if (config?.config_data?.columnMappings) { 
             columnMappingsForCategorization = config.config_data.columnMappings; 
@@ -668,18 +759,17 @@ document.addEventListener('DOMContentLoaded', () => {
             if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.');
             
             const categoryTeamMap = new Map(allCategories.map(c => [c.id, { team_id: c.team_id, team_name: c.team_name, category_name: c.category_name }]));
-            const associatedTeamIds = new Set(allClientTeamAssociations.filter(assoc => assoc.config_id === selectedId).map(assoc => assoc.team_id));
             
             const getRuleDetails = (rule) => {
                 const catDetails = categoryTeamMap.get(rule.category_id);
                 return catDetails ? { ...rule, ...catDetails } : null;
             };
 
-            const filteredEditRules = existingEditRules.map(getRuleDetails).filter(r => r && associatedTeamIds.has(r.team_id));
-            const filteredNoteRules = existingNoteRules.map(getRuleDetails).filter(r => r && associatedTeamIds.has(r.team_id));
+            const detailedEditRules = activeEditRules.map(getRuleDetails).filter(Boolean);
+            const detailedNoteRules = activeNoteRules.map(getRuleDetails).filter(Boolean);
 
-            configSpecificRules.editRulesMap = new Map(filteredEditRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
-            configSpecificRules.noteRulesMap = new Map(filteredNoteRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
+            configSpecificRules.editRulesMap = new Map(detailedEditRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
+            configSpecificRules.noteRulesMap = new Map(detailedNoteRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
 
             w9TriageSection.style.display = 'none';
             triageMrw9Uploader.value = '';
@@ -744,18 +834,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    clientRuleFilter.addEventListener('change', (e) => {
+    clientRuleFilter.addEventListener('change', async (e) => {
         const configId = e.target.value;
         if (configId === 'all') {
-            renderExistingRulesTables(null);
+            renderExistingRulesTables([], []); // Clear tables
             return;
         }
         
-        const relevantTeamIds = allClientTeamAssociations
-            .filter(assoc => assoc.config_id === parseInt(configId, 10))
-            .map(assoc => assoc.team_id);
-            
-        renderExistingRulesTables(relevantTeamIds);
+        try {
+            await loadRulesForConfig(configId);
+            renderExistingRulesTables(activeEditRules, activeNoteRules);
+        } catch (error) {
+            alert('Failed to load rules for this client.');
+            console.error(error);
+        }
     });
 
     // Integrated Triage Event Listeners
