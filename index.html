@@ -66,13 +66,23 @@
             <label for="reportFile" class="form-label">Select an XLSX or CSV file to begin analysis.</label>
             <input class="form-control" type="file" id="reportFile" accept=".xlsx, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
         </div>
+
+        <!-- Optional Provider Verification Report Upload -->
+        <div class="card p-3 mb-4">
+            <h5 class="card-title fw-bold">3. Optional: Upload Provider Verification Data</h5>
+            <label for="providerReportFile" class="form-label">Select the corresponding provider verification report. This will enrich the work queue with W9 and approval statuses.</label>
+            <input class="form-control" type="file" id="providerReportFile" accept=".xlsx, .csv" disabled>
+        </div>
         
         <div id="dashboardContent" style="display: none;">
             <!-- Download Buttons Section -->
             <div class="card p-3 mb-4">
-                <h5 class="card-title fw-bold">3. Download Reports</h5>
-                <div id="teamReportButtons" class="d-grid gap-2 d-md-flex">
+                <h5 class="card-title fw-bold">4. Download Reports</h5>
+                <div id="teamReportButtons" class="d-grid gap-2 d-md-flex mb-3">
                     <p class="text-muted">Process a file to generate download buttons for each team.</p>
+                </div>
+                <div id="specialtyReportButtons">
+                    <!-- L1 Monitor button will be added here by JS -->
                 </div>
                  <hr>
                  <button class="btn btn-dark w-100" id="generatePdfBtn">Download Detailed PDF Summary</button>
@@ -116,6 +126,10 @@
                                     <th data-sort="source">Source</th>
                                     <th data-sort="teamName">Assigned Team</th>
                                     <th>Prov Ops Team Mbr</th>
+                                    <th data-sort="w9Attached">W9 Attached?</th>
+                                    <th data-sort="tinHasW9InPV">TIN Has W9?</th>
+                                    <th data-sort="pvApproved">Approved in PV?</th>
+                                    <th data-sort="pvSource">PV Source/Notes</th>
                                     <th>PV Updated (Y/N)</th>
                                     <th>Notes</th>
                                     <th data-sort="claimId">Claim ID</th>
@@ -158,8 +172,8 @@
                 const response = await fetch('/.netlify/functions/get-categorization-config');
                 if (!response.ok) throw new Error('Failed to load categorization config');
                 const config = await response.json();
-                categorizationConfig.editRulesMap = new Map(config.editRules.map(r => [r.edit_text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
-                categorizationConfig.noteRulesMap = new Map(config.noteRules.map(r => [r.note_keyword, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
+                categorizationConfig.editRulesMap = new Map(config.editRules.map(r => [r.edit_text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name, send_to_l1_monitor: r.send_to_l1_monitor }]));
+                categorizationConfig.noteRulesMap = new Map(config.noteRules.map(r => [r.note_keyword, { category: r.category_name, teamId: r.team_id, teamName: r.team_name, send_to_l1_monitor: r.send_to_l1_monitor }]));
             } catch (error) {
                 console.error("Could not load categorization rules:", error);
             }
@@ -183,10 +197,10 @@
             }
             
             const totalCharges = parseFloat(getVal(claim, 'totalCharges') || 0);
-            if (totalCharges > 50000) return { category: 'On Hold: High Dollar Review', source: 'Fallback', teamName: 'Needs Assignment' };
-            if (notes.includes('duplicate') || (edit || '').toLowerCase().includes('duplicate')) return { category: 'On Hold: Duplicate', source: 'Fallback', teamName: 'Needs Assignment' };
+            if (totalCharges > 50000) return { category: 'On Hold: High Dollar Review', source: 'Fallback', teamName: 'Needs Assignment', send_to_l1_monitor: false };
+            if (notes.includes('duplicate') || (edit || '').toLowerCase().includes('duplicate')) return { category: 'On Hold: Duplicate', source: 'Fallback', teamName: 'Needs Assignment', send_to_l1_monitor: false };
             
-            return { category: 'Needs Triage', source: 'Default', teamName: 'Needs Assignment' };
+            return { category: 'Needs Triage', source: 'Default', teamName: 'Needs Assignment', send_to_l1_monitor: false };
         }
 
         // --- CONFIGURATION & EVENT LISTENERS ---
@@ -222,6 +236,7 @@
 
         document.addEventListener('DOMContentLoaded', () => {
             document.getElementById('reportFile').addEventListener('change', (e) => handleFile(e, false));
+            document.getElementById('providerReportFile').addEventListener('change', handleProviderFile);
             document.getElementById('generatePdfBtn').addEventListener('click', generateStructuredPDF);
             document.getElementById('work-queue-table').querySelector('thead').addEventListener('click', (e) => {
                 const header = e.target.closest('th');
@@ -255,6 +270,7 @@
                     aggregatedMetrics = processedData.metrics;
                     renderDashboard(allClaimsData, aggregatedMetrics);
                     populateCategoryFilter(allClaimsData);
+                    document.getElementById('providerReportFile').disabled = false;
                     renderWorkQueue(allClaimsData);
                     document.getElementById('dashboardContent').style.display = 'block';
                 } catch (error) {
@@ -280,6 +296,74 @@
             };
             file.name.endsWith('.csv') ? reader.readAsText(file) : reader.readAsArrayBuffer(file);
         }
+
+        function handleProviderFile(event) {
+            const file = event.target.files[0];
+            if (!file || allClaimsData.length === 0) {
+                if (allClaimsData.length === 0) alert("Please process the main claims report first.");
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                let providerData;
+                if (file.name.endsWith('.csv')) {
+                    providerData = Papa.parse(e.target.result, { header: true, skipEmptyLines: true }).data;
+                } else {
+                    const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                    providerData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                }
+                
+                const headers = Object.keys(providerData[0] || {});
+                const claimIdKey = headers.find(h => h.toLowerCase().includes('claim id'));
+                const w9AttachedKey = headers.find(h => h.toLowerCase().includes('w9 attached'));
+                const isApprovedKey = headers.find(h => h.toLowerCase().includes('isapproved in pv'));
+                const sourceKey = headers.find(h => h.toLowerCase().includes('source in pv'));
+                
+                if(!claimIdKey) {
+                    alert("Could not find a 'Claim ID' column in the Provider Verification report. Cannot merge data.");
+                    return;
+                }
+
+                const providerMap = new Map();
+                providerData.forEach(row => {
+                    const claimId = row[claimIdKey];
+                    if (claimId) {
+                        providerMap.set(claimId.toString(), {
+                            w9Attached: row[w9AttachedKey] || 'N/A',
+                            pvApproved: row[isApprovedKey] || 'N/A',
+                            pvSource: row[sourceKey] || ''
+                        });
+                    }
+                });
+
+                // First pass: Merge claim-specific data
+                allClaimsData.forEach(claim => Object.assign(claim, providerMap.get(claim.claimId)));
+
+                // Second pass: Create a TIN status map
+                const tinStatusMap = new Map();
+                if(currentColumnMappings.billingProviderTaxId) {
+                    allClaimsData.forEach(claim => {
+                        const tin = getVal(claim.original, 'billingProviderTaxId');
+                        if (tin && claim.w9Attached?.toString().trim().toUpperCase() === 'YES') {
+                            tinStatusMap.set(tin, 'YES');
+                        }
+                    });
+                     // Third pass: Enrich all claims with TIN-level W9 status
+                    allClaimsData.forEach(claim => {
+                        const tin = getVal(claim.original, 'billingProviderTaxId');
+                        claim.tinHasW9InPV = tin && tinStatusMap.has(tin) ? 'YES' : 'NO';
+                    });
+                } else {
+                     console.warn("Billing Provider Tax ID is not mapped. Cannot perform TIN-level W9 check.");
+                }
+
+                renderWorkQueue(allClaimsData);
+                alert(`Successfully merged data from ${providerMap.size} records in the provider report.`);
+            };
+            file.name.endsWith('.csv') ? reader.readAsText(file) : reader.readAsArrayBuffer(file);
+        }
+
 
         function analyzeAndProcessClaims(data) {
             const metrics = { 
@@ -320,7 +404,8 @@
                     edit: getVal(rawClaim, 'edit') || 'No Edits',
                     providerName: getVal(rawClaim, 'providerName') || 'Unknown',
                     claimId: getVal(rawClaim, 'claimId') || 'N/A',
-                    original: rawClaim
+                    original: rawClaim,
+                    tinHasW9InPV: 'N/A' // Default value
                 };
 
                 metrics.totalClaims++;
@@ -351,11 +436,13 @@
                     processedClaim.source = categoryInfo.source;
                     processedClaim.teamId = categoryInfo.teamId;
                     processedClaim.teamName = categoryInfo.teamName;
+                    processedClaim.isL1MonitorItem = categoryInfo.send_to_l1_monitor;
                     processedClaim.priorityScore = getPriorityScore(processedClaim);
                 } else {
                     processedClaim.category = 'N/A';
                     processedClaim.source = 'N/A';
                     processedClaim.teamName = 'N/A';
+                    processedClaim.isL1MonitorItem = false;
                     processedClaim.priorityScore = -1;
                     // This is a "clean" claim for aging purposes
                     cleanAgeSum += processedClaim.age;
@@ -466,7 +553,7 @@
             `;
             
             Object.values(myCharts).forEach(chart => chart.destroy());
-            populateTeamDownloadButtons(claims);
+            populateDownloadButtons(claims);
         }
 
         function populateCategoryFilter(claims) {
@@ -505,6 +592,10 @@
                     <td>${claim.source || 'N/A'}</td>
                     <td>${claim.teamName || 'N/A'}</td>
                     <td></td>
+                    <td>${claim.w9Attached || ''}</td>
+                    <td>${claim.tinHasW9InPV || 'N/A'}</td>
+                    <td>${claim.pvApproved || ''}</td>
+                    <td>${claim.pvSource || ''}</td>
                     <td></td>
                     <td></td>
                     <td>${claim.claimId || 'N/A'}</td>
@@ -515,22 +606,36 @@
             ).join('');
         }
 
-        function populateTeamDownloadButtons(claims) {
-            const container = document.getElementById('teamReportButtons');
-            const actionableClaims = claims.filter(c => c.isActionable && c.teamName);
-            const teams = [...new Set(actionableClaims.map(c => c.teamName))];
-            container.innerHTML = '';
+        function populateDownloadButtons(claims) {
+            const teamContainer = document.getElementById('teamReportButtons');
+            const specialtyContainer = document.getElementById('specialtyReportButtons');
+            const actionableClaims = claims.filter(c => c.isActionable);
+
+            // Team buttons
+            const teams = [...new Set(actionableClaims.map(c => c.teamName).filter(Boolean))];
+            teamContainer.innerHTML = '';
             if (teams.length === 0) {
-                container.innerHTML = '<p class="text-muted">No actionable claims found for any team.</p>';
-                return;
+                teamContainer.innerHTML = '<p class="text-muted">No actionable claims found for any team.</p>';
+            } else {
+                teams.sort().forEach(teamName => {
+                    const btn = document.createElement('button');
+                    btn.className = 'btn btn-success';
+                    btn.innerHTML = `<i class="bi bi-download"></i> Download ${teamName} Report`;
+                    btn.onclick = () => downloadTeamReport(teamName, actionableClaims);
+                    teamContainer.appendChild(btn);
+                });
             }
-            teams.sort().forEach(teamName => {
+
+            // Specialty buttons (L1 Monitor)
+            specialtyContainer.innerHTML = '';
+            const l1MonitorClaims = actionableClaims.filter(c => c.isL1MonitorItem);
+            if(l1MonitorClaims.length > 0) {
                 const btn = document.createElement('button');
-                btn.className = 'btn btn-success';
-                btn.innerHTML = `<i class="bi bi-download"></i> Download ${teamName} Report`;
-                btn.onclick = () => downloadTeamReport(teamName, actionableClaims);
-                container.appendChild(btn);
-            });
+                btn.className = 'btn btn-info';
+                btn.innerHTML = `<i class="bi bi-clipboard-data"></i> Download L1 Monitor Report (${l1MonitorClaims.length} items)`;
+                btn.onclick = () => downloadL1MonitorReport(l1MonitorClaims);
+                specialtyContainer.appendChild(btn);
+            }
         }
 
         function downloadTeamReport(teamName, allActionableClaims) {
@@ -555,6 +660,19 @@
                 let reportData;
                 let ws;
 
+                // For all categories, start with a base object plus our new TIN field
+                const baseMapping = (claim) => ({
+                    ...claim.original,
+                    'Priority Score': claim.priorityScore,
+                    'Assigned Team': claim.teamName,
+                    'Category': claim.category,
+                    'Categorization Source': claim.source,
+                    'TIN Has W9 in PV': claim.tinHasW9InPV,
+                    'Prov Ops Team Mbr': '',
+                    'PV Updated (Y/N)': '',
+                    'Notes': ''
+                });
+
                 switch (categoryName) {
                     case 'Contract Issues': case 'Pay To': case 'W9 Research': case 'SEQ_TFL': {
                         const providerMap = new Map();
@@ -562,9 +680,10 @@
                             const providerName = getVal(claim.original, 'providerName') || 'Unknown';
                             const providerTin = getVal(claim.original, 'billingProviderTaxId') || 'Unknown';
                             const networkStatus = getVal(claim.original, 'networkStatus') || 'Unknown';
+                            const tinHasW9 = claim.tinHasW9InPV;
                             const key = `${providerName}|${providerTin}|${networkStatus}`;
                             if (!providerMap.has(key)) {
-                                providerMap.set(key, { 'Billing Provider Name': providerName, 'Billing Provider Tax ID': providerTin, 'Network Status': networkStatus, 'Count of Claims': 0 });
+                                providerMap.set(key, { 'Billing Provider Name': providerName, 'Billing Provider Tax ID': providerTin, 'Network Status': networkStatus, 'TIN Has W9 in PV': tinHasW9, 'Count of Claims': 0 });
                             }
                             providerMap.get(key)['Count of Claims']++;
                         });
@@ -582,9 +701,10 @@
                             const renderingNpi = getVal(claim.original, 'renderingProviderNpi') || 'Unknown';
                             const billingTin = getVal(claim.original, 'billingProviderTaxId') || 'Unknown';
                             const networkStatus = getVal(claim.original, 'networkStatus') || 'Unknown';
+                            const tinHasW9 = claim.tinHasW9InPV;
                             const key = `${renderingName}|${renderingNpi}|${billingTin}|${networkStatus}`;
                             if (!renderingMap.has(key)) {
-                                renderingMap.set(key, { 'Rendering Provider Name': renderingName, 'Rendering Provider NPI': renderingNpi, 'Billing Provider TIN': billingTin, 'Network Status': networkStatus });
+                                renderingMap.set(key, { 'Rendering Provider Name': renderingName, 'Rendering Provider NPI': renderingNpi, 'Billing Provider TIN': billingTin, 'Network Status': networkStatus, 'TIN Has W9 in PV': tinHasW9 });
                             }
                         });
                         reportData = Array.from(renderingMap.values());
@@ -595,7 +715,7 @@
                     }
 
                     default: {
-                        reportData = claimsInCat.map(claim => ({ ...claim.original, 'Priority Score': claim.priorityScore, 'Assigned Team': claim.teamName, 'Category': claim.category, 'Categorization Source': claim.source, 'Prov Ops Team Mbr': '', 'PV Updated (Y/N)': '', 'Notes': '' }));
+                        reportData = claimsInCat.map(baseMapping);
                         ws = XLSX.utils.json_to_sheet(reportData);
                         break;
                     }
@@ -611,6 +731,30 @@
             XLSX.writeFile(wb, fileName);
         }
         
+        function downloadL1MonitorReport(l1Claims) {
+            const today = new Date().toISOString().slice(0, 10);
+            const clientName = document.getElementById('clientName').value.trim().replace(/ /g, '_') || 'Client';
+            const fileName = `${clientName}_L1_Monitor_Report_${today}.xlsx`;
+
+            const reportData = l1Claims.map(claim => ({
+                'Claim ID': claim.claimId,
+                'Category': claim.category,
+                'Assigned Team': claim.teamName,
+                'Age (Days)': claim.age,
+                'Amount at Risk': claim.netPayment,
+                'Billing Provider Name': claim.providerName,
+                'Billing Provider Tax ID': getVal(claim.original, 'billingProviderTaxId'),
+                'TIN Has W9 in PV': claim.tinHasW9InPV,
+                'Claim-Specific W9 Attached': claim.w9Attached,
+                'Claim-Specific PV Notes': claim.pvSource
+            }));
+
+            const ws = XLSX.utils.json_to_sheet(reportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'L1 Monitor Items');
+            XLSX.writeFile(wb, fileName);
+        }
+
         async function generateStructuredPDF() {
             if (Object.keys(aggregatedMetrics).length === 0) { alert("Please load data first."); return; }
             const clientName = document.getElementById('clientName').value.trim();
