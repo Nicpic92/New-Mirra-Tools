@@ -1,9 +1,6 @@
 // --- START OF FILE get-categorization-config.js ---
 
-const { Pool } = require('pg');
-
-// Create the connection pool ONCE, outside the handler
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = require('./database.js'); // THE FIX: Use the shared pool
 
 exports.handler = async function(event, context) {
     try {
@@ -36,7 +33,7 @@ exports.handler = async function(event, context) {
         };
 
     } catch (error) {
-        console.error("Error fetching categorization config:", error);
+        console.error("Error in get-categorization-config.js:", error);
         return {
             statusCode: 500,
             body: JSON.stringify({ error: "Failed to fetch categorization configuration." }),
