@@ -1,6 +1,5 @@
 // --- START OF FILE client-rules.js ---
 
-// Instead of requiring 'pg', we now require our central database helper.
 const pool = require('./database.js');
 
 exports.handler = async function(event) {
@@ -20,15 +19,18 @@ exports.handler = async function(event) {
 
         switch (event.httpMethod) {
             case 'GET': {
+                // THE FIX IS HERE: I have removed "r.id" from the SELECT statement.
                 const sql = `
-                    SELECT r.id, r.${textField} as text, r.category_id, c.category_name, t.team_name
+                    SELECT r.${textField} as text, r.category_id, c.category_name, t.team_name
                     FROM ${tableName} r
-                    JOIN claim_categories c ON r.category_id = c.id
+                    LEFT JOIN claim_categories c ON r.category_id = c.id
                     LEFT JOIN teams t ON c.team_id = t.id
                     WHERE r.config_id = $1;
                 `;
                 const result = await pool.query(sql, [config_id]);
-                return { statusCode: 200, body: JSON.stringify(result.rows) };
+                // Filter out any rules that have a dead reference to a deleted category
+                const validRows = result.rows.filter(row => row.category_id !== null && row.category_name !== null);
+                return { statusCode: 200, body: JSON.stringify(validRows) };
             }
             case 'POST': {
                 const rules = JSON.parse(event.body);
