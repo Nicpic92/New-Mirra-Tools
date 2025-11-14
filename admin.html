@@ -1,3 +1,5 @@
+--- START OF FILE admin.html ---
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -298,7 +300,7 @@
 <script>
 document.addEventListener('DOMContentLoaded', () => {
     // API Endpoints
-    const CONFIG_API = '/.netlify/functions/configurations', TEAMS_API = '/.netlify/functions/teams', CATEGORIES_API = '/.netlify/functions/categories', RULES_API = '/.netlify/functions/rules', CLIENT_TEAM_API = '/.netlify/functions/client-team-associations';
+    const CONFIG_API = '/.netlify/functions/configurations', TEAMS_API = '/.netlify/functions/teams', CATEGORIES_API = '/.netlify/functions/categories', RULES_API = '/.netlify/functions/client-rules', CLIENT_TEAM_API = '/.netlify/functions/client-team-associations';
 
     // DOM Elements
     const configForm = document.getElementById('configForm'), configIdInput = document.getElementById('configId'), configNameInput = document.getElementById('configName'), clientNameInput = document.getElementById('clientName'), clearBtn = document.getElementById('clearBtn'), reportUploader = document.getElementById('reportUploader'), mappingSection = document.getElementById('mappingSection'), mappingTableBody = document.getElementById('mappingTableBody'), mappingHeader = document.getElementById('mappingHeader'), mappingAlert = document.getElementById('mapping-alert'), configList = document.getElementById('configList');
