@@ -1,28 +1,9 @@
---- START OF FILE client-rules.js ---
+// --- START OF FILE client-rules.js ---
 
-const { Pool } = require('pg');
-
-// Initialize the pool to null. It will be created on the first invocation.
-let pool = null;
+// Instead of requiring 'pg', we now require our central database helper.
+const pool = require('./database.js');
 
 exports.handler = async function(event) {
-    // This check + initialization makes the function more resilient to cold starts.
-    if (!pool) {
-        try {
-            console.log("Initializing database connection pool for the first time.");
-            pool = new Pool({
-                connectionString: process.env.DATABASE_URL,
-                connectionTimeoutMillis: 5000,
-            });
-        } catch (error) {
-            console.error('!!! FAILED to initialize database pool:', error);
-            return {
-                statusCode: 500,
-                body: JSON.stringify({ error: "Failed to initialize database connection.", message: error.message })
-            };
-        }
-    }
-
     try {
         const { type, config_id } = event.queryStringParameters || {};
 
@@ -49,7 +30,6 @@ exports.handler = async function(event) {
                 const result = await pool.query(sql, [config_id]);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
-            // ... (POST and DELETE cases remain the same)
             case 'POST': {
                 const rules = JSON.parse(event.body);
                 if (!Array.isArray(rules) || rules.length === 0) {
@@ -96,7 +76,8 @@ exports.handler = async function(event) {
             statusCode: 500,
             body: JSON.stringify({
                 error: "Internal Server Error in client-rules.js function.",
-                message: error.message
+                message: error.message,
+                stack: error.stack
             })
         };
     }
