@@ -102,13 +102,10 @@
                         
                         <ul class="nav nav-tabs" id="ruleTabs" role="tablist">
                             <li class="nav-item" role="presentation">
-                                <button class="nav-link active" id="discover-tab" data-bs-toggle="tab" data-bs-target="#discover-pane" type="button" role="tab">Discover & Assign New Rules</button>
+                                <button class="nav-link active" id="discover-tab" data-bs-toggle="tab" data-bs-target="#discover-pane" type="button" role="tab">Discover, Assign & Triage</button>
                             </li>
                             <li class="nav-item" role="presentation">
                                 <button class="nav-link" id="manage-tab" data-bs-toggle="tab" data-bs-target="#manage-pane" type="button" role="tab">Manage Existing Rules</button>
-                            </li>
-                             <li class="nav-item" role="presentation">
-                                <button class="nav-link" id="triage-tab" data-bs-toggle="tab" data-bs-target="#triage-pane" type="button" role="tab">W9 Triage</button>
                             </li>
                         </ul>
 
@@ -168,6 +165,38 @@
                                             <button class="btn btn-success mt-3 save-rules-btn">Save All Rule Assignments</button>
                                         </div>
                                         <div id="noRulesFound" class="alert alert-info">Upload a file to begin.</div>
+                                        
+                                        <hr class="my-4">
+
+                                        <h5>4. W9 Triage (from uploaded report)</h5>
+                                        <p class="text-muted small">After assigning new rules, you can optionally upload the MRW9 report here to identify and re-assign W9-related claims from the main report you just uploaded.</p>
+                                        <div id="w9TriageSection" style="display: none;">
+                                            <div class="mb-3">
+                                                <label for="triageMrw9Uploader" class="form-label fw-bold">Upload MRW9 Report</label>
+                                                <input class="form-control" type="file" id="triageMrw9Uploader" accept=".xlsx,.csv">
+                                            </div>
+                                            <div id="triageResultsContainer" class="d-none">
+                                                <p id="triageSummary"></p>
+                                                <div class="table-responsive-sm border mb-3">
+                                                    <table class="table table-sm table-hover">
+                                                        <thead class="table-light">
+                                                            <tr>
+                                                                <th>Claim ID</th>
+                                                                <th>Provider Name</th>
+                                                                <th>Provider TIN</th>
+                                                                <th>TIN Has W9?</th>
+                                                                <th>Action</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody id="triageTableBody"></tbody>
+                                                    </table>
+                                                </div>
+                                                <button class="btn btn-primary" id="generateAssignmentReportsBtn">Generate Assignment Reports</button>
+                                            </div>
+                                            <div id="triagePlaceholder" class="alert alert-secondary">
+                                                Upload an MRW9 report to begin the triage process.
+                                            </div>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -205,53 +234,6 @@
                                                 <thead class="table-light"><tr><th>Full Note Text</th><th>Assigned Category (Team)</th><th></th></tr></thead>
                                                 <tbody id="existingNotesTableBody"></tbody>
                                             </table>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- W9 TRIAGE PANE -->
-                            <div class="tab-pane fade" id="triage-pane" role="tabpanel">
-                                <h5>W9 Triage and Assignment Tool</h5>
-                                <p>Compare the main claims report against the MRW9 report to identify and assign W9-related claims in Management Review.</p>
-                                
-                                <div class="row g-4">
-                                    <div class="col-md-4">
-                                        <div id="triageStep1" class="triage-step active">
-                                            <h6>Step 1: Select Configuration</h6>
-                                            <select class="form-select" id="triageConfigSelector"><option value="">Select a configuration...</option></select>
-                                        </div>
-                                        <div id="triageStep2" class="triage-step mt-3">
-                                            <h6>Step 2: Upload Main Claims Report</h6>
-                                            <input class="form-control" type="file" id="triageMainUploader" accept=".xlsx,.csv" disabled>
-                                        </div>
-                                        <div id="triageStep3" class="triage-step mt-3">
-                                            <h6>Step 3: Upload MRW9 Report</h6>
-                                            <input class="form-control" type="file" id="triageMrw9Uploader" accept=".xlsx,.csv" disabled>
-                                        </div>
-                                    </div>
-                                    <div class="col-md-8">
-                                        <h6>Triage Results</h6>
-                                        <div id="triageResultsContainer" class="d-none">
-                                            <p id="triageSummary"></p>
-                                            <div class="table-responsive-sm border mb-3">
-                                                <table class="table table-sm table-hover">
-                                                    <thead class="table-light">
-                                                        <tr>
-                                                            <th>Claim ID</th>
-                                                            <th>Provider Name</th>
-                                                            <th>Provider TIN</th>
-                                                            <th>TIN Has W9?</th>
-                                                            <th>Action</th>
-                                                        </tr>
-                                                    </thead>
-                                                    <tbody id="triageTableBody"></tbody>
-                                                </table>
-                                            </div>
-                                            <button class="btn btn-primary" id="generateAssignmentReportsBtn">Generate Assignment Reports</button>
-                                        </div>
-                                        <div id="triagePlaceholder" class="alert alert-secondary">
-                                            Please complete the steps on the left to begin the triage process.
                                         </div>
                                     </div>
                                 </div>
@@ -328,15 +310,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const clientTeamConfigSelector = document.getElementById('clientTeamConfigSelector'), clientTeamChecklist = document.getElementById('clientTeamChecklist'), saveClientTeamAssocsBtn = document.getElementById('saveClientTeamAssocsBtn');
     const clientRuleFilter = document.getElementById('clientRuleFilter');
 
-    // W9 Triage DOM Elements
-    const triageConfigSelector = document.getElementById('triageConfigSelector'), triageMainUploader = document.getElementById('triageMainUploader'), triageMrw9Uploader = document.getElementById('triageMrw9Uploader'), triageResultsContainer = document.getElementById('triageResultsContainer'), triagePlaceholder = document.getElementById('triagePlaceholder'), triageTableBody = document.getElementById('triageTableBody'), generateAssignmentReportsBtn = document.getElementById('generateAssignmentReportsBtn'), triageSummary = document.getElementById('triageSummary');
+    // W9 Triage DOM Elements (now integrated)
+    const w9TriageSection = document.getElementById('w9TriageSection'), triageMrw9Uploader = document.getElementById('triageMrw9Uploader'), triageResultsContainer = document.getElementById('triageResultsContainer'), triagePlaceholder = document.getElementById('triagePlaceholder'), triageTableBody = document.getElementById('triageTableBody'), generateAssignmentReportsBtn = document.getElementById('generateAssignmentReportsBtn'), triageSummary = document.getElementById('triageSummary');
 
     // Global State
     let allTeams = [], allCategories = [], allClientConfigs = [], allClientTeamAssociations = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {}, currentCustomWidgets = [];
     let existingEditRules = [], existingNoteRules = [], triageCategorizationConfig = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
     // Triage State
-    let triageColumnMappings = {}, triageClaimsData = [], mainReportClaimIds = new Set();
+    let triageClaimsData = [], mainReportClaimIds = new Set();
 
     const standardFields = [
         { key: 'claimId', displayName: 'Claim ID / Number', required: true, type: 'string' }, { key: 'age', displayName: 'Age (in days)', required: true, type: 'number' }, { key: 'netPayment', displayName: 'Net Payment Amount', required: true, type: 'number' }, { key: 'state', displayName: 'Claim State', required: true, type: 'string' }, { key: 'status', displayName: 'Claim Status', required: true, type: 'string' }, { key: 'networkStatus', displayName: 'Network Status', required: true, type: 'string' }, { key: 'providerName', displayName: 'Billing Provider Name', required: true, type: 'string' }, { key: 'edit', displayName: 'Claim Edits', required: true, type: 'string' }, { key: 'notes', displayName: 'Claim Notes', required: true, type: 'string' }, { key: 'totalCharges', displayName: 'Total Billed Amount', required: false, type: 'number' }, { key: 'dsnp', displayName: 'DSNP Status', required: false, type: 'string' }, { key: 'payer', displayName: 'Payer Name', required: false, type: 'string' }, { key: 'claimCategory', displayName: 'Category', required: false, type: 'string' }, { key: 'claimType', displayName: 'Claim Type', required: false, type: 'string' }, { key: 'receivedDate', displayName: 'Received Date', required: false, type: 'date' }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID', required: false, type: 'string' }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI', required: false, type: 'string' }, { key: 'patientName', displayName: 'Patient Name', required: false, type: 'string' }, { key: 'subscriberId', displayName: 'Subscriber ID', required: false, type: 'string' }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name', required: false, type: 'string' }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI', required: false, type: 'string' }, { key: 'dosFrom', displayName: 'Date of Service (From)', required: false, type: 'date' }, { key: 'dosTo', displayName: 'Date of Service (To)', required: false, type: 'date' }, { key: 'cleanAge', displayName: 'Clean Age', required: false, type: 'number' }, { key: 'pbpName', displayName: 'PBP Name', required: false, type: 'string' }, { key: 'planName', displayName: 'Plan Name', required: false, type: 'string' }, { key: 'activityLog', displayName: 'Activity Log Description', required: false, type: 'string' }, { key: 'activityUser', displayName: 'Activity Performed By', required: false, type: 'string' }, { key: 'activityDate', displayName: 'Activity Performed On', required: false, type: 'date' }
@@ -354,7 +336,7 @@ document.addEventListener('DOMContentLoaded', () => {
             window.allClientConfigs = allClientConfigs;
             configList.innerHTML = allClientConfigs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
             
-            const selectors = [categorizationConfigSelector, triageConfigSelector, clientTeamConfigSelector, clientRuleFilter];
+            const selectors = [categorizationConfigSelector, clientTeamConfigSelector, clientRuleFilter];
             selectors.forEach(sel => {
                 const isFilter = sel.id === 'clientRuleFilter';
                 sel.innerHTML = isFilter ? '<option value="all">Show All Rules</option>' : '<option selected disabled value="">Select a configuration...</option>';
@@ -464,30 +446,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- GENERIC FILE READER UTILITY ---
     function readFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]); resolve(jsonData); } catch (err) { reject(err); } }; reader.onerror = (err) => reject(err); reader.readAsArrayBuffer(file); }); }
     
-    // --- W9 TRIAGE LOGIC ---
-    const getTriageVal = (claim, standardKey) => { const mappedKey = triageColumnMappings[standardKey]; return (mappedKey && claim[mappedKey] !== undefined) ? claim[mappedKey] : undefined; };
-    function getTriageClaimCategory(claim) { const notes = (getTriageVal(claim, 'notes') || '').toLowerCase(); const edit = getTriageVal(claim, 'edit'); if (edit && triageCategorizationConfig.editRulesMap.has(edit)) { return triageCategorizationConfig.editRulesMap.get(edit); } if (notes) { for (const [keyword, rule] of triageCategorizationConfig.noteRulesMap.entries()) { if (notes.includes(keyword)) return rule; } } return { category: 'Needs Triage', teamName: 'Needs Assignment' }; }
-    
-    async function handleTriageMainFile(event) {
-        const file = event.target.files[0];
-        if (!file) return;
-        try {
-            const mainData = await readFile(file);
-            mainReportClaimIds.clear();
-            mainData.forEach(row => {
-                const claimId = getTriageVal(row, 'claimId');
-                if (claimId) {
-                    mainReportClaimIds.add(claimId.toString());
-                }
-            });
-            alert(`Loaded ${mainReportClaimIds.size} claims from the main report.`);
-            triageMrw9Uploader.disabled = false;
-            document.getElementById('triageStep3').classList.add('active');
-        } catch (error) {
-            alert(`Error processing Main Claims Report: ${error.message}`);
-        }
-    }
-    
+    // --- W9 TRIAGE LOGIC (INTEGRATED) ---
+    const getAdminVal = (claim, standardKey) => { const mappedKey = columnMappingsForCategorization[standardKey]; return (mappedKey && claim[mappedKey] !== undefined) ? claim[mappedKey] : undefined; };
+    function getTriageClaimCategory(claim) { const notes = (getAdminVal(claim, 'notes') || '').toLowerCase(); const edit = getAdminVal(claim, 'edit'); if (edit && triageCategorizationConfig.editRulesMap.has(edit)) { return triageCategorizationConfig.editRulesMap.get(edit); } if (notes) { for (const [keyword, rule] of triageCategorizationConfig.noteRulesMap.entries()) { if (notes.includes(keyword)) return rule; } } return { category: 'Needs Triage', teamName: 'Needs Assignment' }; }
+        
     async function handleTriageMRW9File(event) {
         const file = event.target.files[0];
         if (!file) return;
@@ -498,14 +460,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const headers = Object.keys(mrw9Data[0] || {});
             const w9AttachedKey = headers.find(h => h.toLowerCase().includes('w9') && h.toLowerCase().includes('pv'));
 
-            if (!w9AttachedKey || !triageColumnMappings.billingProviderTaxId) {
+            if (!w9AttachedKey || !columnMappingsForCategorization.billingProviderTaxId) {
                 alert("The selected configuration must have 'Billing Provider Tax ID' mapped, and the MRW9 report must contain a column with 'W9' and 'PV' in its header to identify W9 status.");
                 event.target.value = '';
                 return;
             }
 
             mrw9Data.forEach(row => {
-                const tin = getTriageVal(row, 'billingProviderTaxId');
+                const tin = getAdminVal(row, 'billingProviderTaxId');
                 const w9Status = (row[w9AttachedKey] || '').toString().trim().toUpperCase();
                 if (tin && w9Status === 'YES') {
                     tinStatusMap.set(tin.toString(), 'YES');
@@ -513,11 +475,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             const filteredClaims = mrw9Data.filter(claim => {
-                const claimId = getTriageVal(claim, 'claimId');
+                const claimId = getAdminVal(claim, 'claimId');
                 if (!claimId || !mainReportClaimIds.has(claimId.toString())) {
                     return false; // Exclude if not in the main report
                 }
-                const status = (getTriageVal(claim, 'status') || '').toUpperCase();
+                const status = (getAdminVal(claim, 'status') || '').toUpperCase();
                 const categoryInfo = getTriageClaimCategory(claim);
                 const teamName = categoryInfo.teamName;
                 const categoryName = (categoryInfo.category || '').toUpperCase();
@@ -525,11 +487,11 @@ document.addEventListener('DOMContentLoaded', () => {
             });
 
             triageClaimsData = filteredClaims.map(claim => {
-                const tin = getTriageVal(claim, 'billingProviderTaxId');
+                const tin = getAdminVal(claim, 'billingProviderTaxId');
                 const hasW9 = tin && tinStatusMap.has(tin.toString()) ? 'YES' : 'NO';
                 return {
-                    claimId: getTriageVal(claim, 'claimId'),
-                    providerName: getTriageVal(claim, 'providerName'),
+                    claimId: getAdminVal(claim, 'claimId'),
+                    providerName: getAdminVal(claim, 'providerName'),
                     providerTin: tin,
                     tinHasW9: hasW9,
                     original: claim
@@ -618,8 +580,53 @@ document.addEventListener('DOMContentLoaded', () => {
     clearBtn.addEventListener('click', clearConfigForm);
     newTeamForm.addEventListener('submit', async (e) => { e.preventDefault(); const name = newTeamNameInput.value.trim(); if (!name) return; try { await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) }); newTeamNameInput.value = ''; await loadAllData(); } catch (error) { alert('Failed to add team. It may already exist.'); } });
     newCategoryForm.addEventListener('submit', async (e) => { e.preventDefault(); const category_name = newCategoryNameInput.value.trim(); const team_id = parseInt(teamCategorySelect.value, 10); const send_to_l1_monitor = l1MonitorCheckbox.checked; if (!category_name || !team_id) return alert('Please select a team and enter a category name.'); try { await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) }); newCategoryNameInput.value = ''; l1MonitorCheckbox.checked = false; await loadAllData(); } catch (error) { alert('Failed to add category. It may already exist.'); } });
-    categorizationConfigSelector.addEventListener('change', () => { const selectedId = parseInt(categorizationConfigSelector.value, 10); const config = (allClientConfigs || []).find(c => c.id === selectedId); if (config?.config_data?.columnMappings) { columnMappingsForCategorization = config.config_data.columnMappings; const hasRequiredCols = columnMappingsForCategorization.edit && columnMappingsForCategorization.notes; categorizationReportUploader.disabled = !hasRequiredCols; if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.') } });
-    categorizationReportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const dataJson = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]); processUploadedReport(dataJson); }; reader.readAsArrayBuffer(file); });
+    
+    categorizationConfigSelector.addEventListener('change', () => { 
+        const selectedId = parseInt(categorizationConfigSelector.value, 10); 
+        const config = (allClientConfigs || []).find(c => c.id === selectedId); 
+        if (config?.config_data?.columnMappings) { 
+            columnMappingsForCategorization = config.config_data.columnMappings; 
+            const hasRequiredCols = columnMappingsForCategorization.edit && columnMappingsForCategorization.notes; 
+            categorizationReportUploader.disabled = !hasRequiredCols; 
+            if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.');
+            
+            // Reset triage section on config change
+            w9TriageSection.style.display = 'none';
+            triageMrw9Uploader.value = '';
+            triageResultsContainer.classList.add('d-none');
+            triageTableBody.innerHTML = '';
+        } 
+    });
+
+    categorizationReportUploader.addEventListener('change', async (event) => { 
+        const file = event.target.files[0]; 
+        if (!file) return; 
+        try {
+            const dataJson = await readFile(file);
+            
+            // 1. Process for new rules
+            processUploadedReport(dataJson);
+
+            // 2. Prepare for W9 Triage
+            mainReportClaimIds.clear();
+            dataJson.forEach(row => {
+                const claimId = getAdminVal(row, 'claimId');
+                if (claimId) {
+                    mainReportClaimIds.add(claimId.toString());
+                }
+            });
+
+            alert(`Loaded ${mainReportClaimIds.size} claims from the main report. You can now proceed with W9 Triage.`);
+            w9TriageSection.style.display = 'block';
+            triagePlaceholder.style.display = 'block';
+            triageResultsContainer.classList.add('d-none');
+            triageMrw9Uploader.value = '';
+            
+        } catch(error) {
+            alert(`Error processing main report: ${error.message}`);
+        }
+    });
+
     document.querySelectorAll('.save-rules-btn').forEach(btn => btn.addEventListener('click', saveNewRules));
     saveExistingChangesBtn.addEventListener('click', saveExistingRuleChanges);
     document.getElementById('manage-pane').addEventListener('click', (e) => { if (e.target.classList.contains('btn-delete-rule')) { const type = e.target.dataset.type; const text = decodeURIComponent(e.target.dataset.text); deleteRule(type, text); } });
@@ -670,21 +677,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderExistingRulesTables(relevantTeamIds);
     });
 
-    // Triage Event Listeners
-    triageConfigSelector.addEventListener('change', (e) => {
-        const selectedId = parseInt(e.target.value, 10);
-        const selectedConfig = (allClientConfigs || []).find(c => c.id === selectedId);
-        if (selectedConfig?.config_data?.columnMappings) {
-            triageColumnMappings = selectedConfig.config_data.columnMappings;
-            triageMainUploader.disabled = false;
-            document.getElementById('triageStep2').classList.add('active');
-        } else {
-            triageColumnMappings = {};
-            triageMainUploader.disabled = true;
-            triageMrw9Uploader.disabled = true;
-        }
-    });
-    triageMainUploader.addEventListener('change', handleTriageMainFile);
+    // Integrated Triage Event Listeners
     triageMrw9Uploader.addEventListener('change', handleTriageMRW9File);
     generateAssignmentReportsBtn.addEventListener('click', generateTriageReports);
 
