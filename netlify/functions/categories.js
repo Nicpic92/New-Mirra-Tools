@@ -11,7 +11,6 @@ exports.handler = async function(event) {
     try {
         switch (event.httpMethod) {
             case 'GET': {
-                // Join with teams table to get the team name and new L1 flag
                 const sql = `
                     SELECT c.id, c.category_name, c.team_id, t.team_name, c.send_to_l1_monitor
                     FROM claim_categories c
@@ -22,7 +21,6 @@ exports.handler = async function(event) {
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
-                // Now requires category_name, team_id, and the new L1 flag
                 const { category_name, team_id, send_to_l1_monitor } = JSON.parse(event.body);
                 if (!category_name || !team_id) {
                     return { statusCode: 400, body: 'Missing category_name or team_id' };
@@ -42,7 +40,6 @@ exports.handler = async function(event) {
     } catch (error) {
         console.error('Database error:', error);
         return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
-    } finally {
-        await db.end();
     }
+    // REMOVED: The finally block with db.end()
 };
