@@ -38,3 +38,56 @@ exports.handler = async function(event) {
         await db.end();
     }
 };
+```--- END OF FILE teams.js ---
+--- START OF FILE save-config.js ---
+```javascript
+// Import the Node.js Postgres client
+const { Pool } = require('pg');
+
+exports.handler = async function(event, context) {
+    // We now accept PUT requests for updating a specific resource.
+    if (event.httpMethod !== 'PUT') {
+        return { statusCode: 405, body: 'Method Not Allowed' };
+    }
+
+    // This function now requires an ID to update a specific configuration.
+    const { id } = event.queryStringParameters || {};
+    
+    if (!id) {
+        return {
+            statusCode: 400,
+            body: JSON.stringify({ error: "Missing configuration ID." }),
+        };
+    }
+
+    try {
+        const configData = JSON.parse(event.body);
+
+        const pool = new Pool({
+            connectionString: process.env.DATABASE_URL,
+        });
+
+        // The SQL is updated to update by ID instead of a hardcoded name.
+        const sql = `
+            UPDATE column_configurations
+            SET config_data = $1, last_updated = CURRENT_TIMESTAMP
+            WHERE id = $2;
+        `;
+        
+        await pool.query(sql, [configData, id]);
+        await pool.end();
+
+        return {
+            statusCode: 200,
+            body: JSON.stringify({ message: "Configuration saved successfully!" }),
+        };
+
+    } catch (error) {
+        console.error("Error saving configuration:", error);
+        return {
+            statusCode: 500,
+            body: JSON.stringify({ error: "Failed to save configuration." }),
+        };
+    }
+};
+```--- END OF FILE save-config.js ---
