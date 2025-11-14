@@ -1,6 +1,6 @@
 // --- START OF FILE configurations.js ---
 
-const pool = require('./database.js'); // THE FIX: Use the shared pool
+const pool = require('./database.js'); // Use the shared pool
 
 exports.handler = async function(event) {
     const { id } = event.queryStringParameters || {};
@@ -35,7 +35,7 @@ exports.handler = async function(event) {
             default:
                 return { statusCode: 405, body: 'Method Not Allowed' };
         }
-    } catch (error)
+    } catch (error) { // THE FIX: Added the opening and closing curly braces here
         console.error('Database error in configurations.js:', error);
         return { statusCode: 500, body: JSON.stringify({ error: 'Internal Server Error' }) };
     }
