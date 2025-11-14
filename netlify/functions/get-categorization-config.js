@@ -2,10 +2,11 @@
 
 const { Pool } = require('pg');
 
+// Create the connection pool ONCE, outside the handler
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+
 exports.handler = async function(event, context) {
-    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
     try {
-        // Query now joins through categories to get team info for each rule
         const editRulesQuery = `
             SELECT r.edit_text, c.category_name, t.id as team_id, t.team_name, c.send_to_l1_monitor
             FROM claim_edit_rules r
@@ -40,7 +41,5 @@ exports.handler = async function(event, context) {
             statusCode: 500,
             body: JSON.stringify({ error: "Failed to fetch categorization configuration." }),
         };
-    } finally {
-        await pool.end();
     }
 };
