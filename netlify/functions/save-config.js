@@ -1,18 +1,12 @@
-// Import the Node.js Postgres client
-const { Pool } = require('pg');
+// --- START OF FILE save-config.js ---
 
-// Create the connection pool ONCE, outside the handler
-const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-});
+const pool = require('./database.js'); // THE FIX: Use the shared pool
 
 exports.handler = async function(event, context) {
-    // We now accept PUT requests for updating a specific resource.
     if (event.httpMethod !== 'PUT') {
         return { statusCode: 405, body: 'Method Not Allowed' };
     }
 
-    // This function now requires an ID to update a specific configuration.
     const { id } = event.queryStringParameters || {};
     
     if (!id) {
@@ -23,10 +17,8 @@ exports.handler = async function(event, context) {
     }
 
     try {
-        // The body of a PUT request should be the config_data object directly
         const configData = JSON.parse(event.body);
 
-        // The SQL is updated to update by ID instead of a hardcoded name.
         const sql = `
             UPDATE column_configurations
             SET config_data = $1, last_updated = CURRENT_TIMESTAMP
@@ -41,7 +33,7 @@ exports.handler = async function(event, context) {
         };
 
     } catch (error) {
-        console.error("Error saving configuration:", error);
+        console.error("Error in save-config.js:", error);
         return {
             statusCode: 500,
             body: JSON.stringify({ error: "Failed to save configuration." }),
