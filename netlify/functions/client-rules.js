@@ -100,16 +100,4 @@ exports.handler = async function(event) {
             })
         };
     }
-};```
-
----
-
-### Step 2: Update `admin.html` to Call the New Function Name
-
-Now, in `admin.html`, we just need to change the API endpoint constant to match the new filename.
-
-Find this line near the top of the `<script>` tag in your `admin.html` file:
-
-```javascript
-// BEFORE
-const CONFIG_API = '/.netlify/functions/configurations', TEAMS_API = '/.netlify/functions/teams', CATEGORIES_API = '/.netlify/functions/categories', RULES_API = '/.netlify/functions/rules', CLIENT_TEAM_API = '/.netlify/functions/client-team-associations';
+};
