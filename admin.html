@@ -315,7 +315,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Global State
     let allTeams = [], allCategories = [], allClientConfigs = [], allClientTeamAssociations = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {}, currentCustomWidgets = [];
-    let existingEditRules = [], existingNoteRules = [], triageCategorizationConfig = { editRulesMap: new Map(), noteRulesMap: new Map() };
+    let existingEditRules = [], existingNoteRules = [];
+    let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
     // Triage State
     let triageClaimsData = [], mainReportClaimIds = new Set();
@@ -379,11 +380,6 @@ document.addEventListener('DOMContentLoaded', () => {
     async function loadAllData() {
         try {
             await Promise.all([ loadTeams(), loadCategories(), loadRules(), loadConfigurations(), loadClientTeamAssociations() ]);
-            const response = await fetch('/.netlify/functions/get-categorization-config');
-            const config = await response.json();
-            triageCategorizationConfig.editRulesMap = new Map(config.editRules.map(r => [r.edit_text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
-            triageCategorizationConfig.noteRulesMap = new Map(config.noteRules.map(r => [r.note_keyword, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
-
             renderTeamList();
             populateTeamDropdown();
             renderCategoryList();
@@ -448,7 +444,21 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // --- W9 TRIAGE LOGIC (INTEGRATED) ---
     const getAdminVal = (claim, standardKey) => { const mappedKey = columnMappingsForCategorization[standardKey]; return (mappedKey && claim[mappedKey] !== undefined) ? claim[mappedKey] : undefined; };
-    function getTriageClaimCategory(claim) { const notes = (getAdminVal(claim, 'notes') || '').toLowerCase(); const edit = getAdminVal(claim, 'edit'); if (edit && triageCategorizationConfig.editRulesMap.has(edit)) { return triageCategorizationConfig.editRulesMap.get(edit); } if (notes) { for (const [keyword, rule] of triageCategorizationConfig.noteRulesMap.entries()) { if (notes.includes(keyword)) return rule; } } return { category: 'Needs Triage', teamName: 'Needs Assignment' }; }
+    function getTriageClaimCategory(claim) {
+        const notes = (getAdminVal(claim, 'notes') || '').toLowerCase();
+        const edit = getAdminVal(claim, 'edit');
+        
+        // Use the config-specific rules now
+        if (edit && configSpecificRules.editRulesMap.has(edit)) {
+            return configSpecificRules.editRulesMap.get(edit);
+        }
+        if (notes) {
+            for (const [keyword, rule] of configSpecificRules.noteRulesMap.entries()) {
+                if (notes.includes(keyword)) return rule;
+            }
+        }
+        return { category: 'Needs Triage', teamName: 'Needs Assignment' };
+    }
         
     async function handleTriageMRW9File(event) {
         const file = event.target.files[0];
@@ -506,7 +516,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function renderTriageTable() {
         if (triageClaimsData.length === 0) {
-            triageSummary.textContent = 'No claims matching the triage criteria (i.e., present in both reports, with Status: Management Review, Team: Provider Ops, Category: *W9*) were found.';
+            triageSummary.textContent = 'No claims matching the triage criteria (i.e., present in both reports, with Status: Management Review, Team: Provider Ops, Category: *W9* as per the selected client\'s rules) were found.';
         } else {
             triageSummary.textContent = `Found ${triageClaimsData.length} claims to triage. Default assignments have been suggested below.`;
         }
@@ -590,6 +600,15 @@ document.addEventListener('DOMContentLoaded', () => {
             categorizationReportUploader.disabled = !hasRequiredCols; 
             if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.');
             
+            // Filter rules based on the selected config for the triage logic
+            const associatedTeamIds = new Set(allClientTeamAssociations.filter(assoc => assoc.config_id === selectedId).map(assoc => assoc.team_id));
+            const associatedCategoryIds = new Set(allCategories.filter(cat => associatedTeamIds.has(cat.team_id)).map(cat => cat.id));
+            const filteredEditRules = existingEditRules.filter(rule => associatedCategoryIds.has(rule.category_id));
+            const filteredNoteRules = existingNoteRules.filter(rule => associatedCategoryIds.has(rule.category_id));
+
+            configSpecificRules.editRulesMap = new Map(filteredEditRules.map(r => [r.text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
+            configSpecificRules.noteRulesMap = new Map(filteredNoteRules.map(r => [r.text, { category: r.category_name, teamId: r.team_id, teamName: r.team_name }]));
+
             // Reset triage section on config change
             w9TriageSection.style.display = 'none';
             triageMrw9Uploader.value = '';
