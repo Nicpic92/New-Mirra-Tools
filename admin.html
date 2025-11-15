@@ -543,12 +543,12 @@ document.addEventListener('DOMContentLoaded', () => {
             reportBuilderGroupByChecklist.appendChild(div);
         });
     }
-
-    // --- (All other functions from previous steps are below) ---
-    function editConfig(configId) { /* ... same as before ... */ }
-    async function deleteConfig(id) { /* ... same as before ... */ }
-    async function deleteTeam(id) { /* ... same as before ... */ }
-    async function deleteCategory(id) { /* ... same as before ... */ }
+    
+    // --- OTHER FUNCTIONS ---
+    function editConfig(configId) { /* Implementation here */ }
+    async function deleteConfig(id) { /* Implementation here */ }
+    async function deleteTeam(id) { /* Implementation here */ }
+    async function deleteCategory(id) { /* Implementation here */ }
     function processUploadedReport(data) {
         const allowedStatuses = ['PEND', 'MANAGEMENTREVIEW', 'ONHOLD'];
         const { edit: editColumn, notes: notesColumn, status: statusColumn } = columnMappingsForCategorization;
@@ -611,13 +611,12 @@ document.addEventListener('DOMContentLoaded', () => {
             renderExistingRulesTables(activeEditRules, activeNoteRules);
         } catch (error) { alert(`Failed to save rules: ${error.message}`); }
     }
-    function renderExistingRulesTables(editRules = [], noteRules = []) { /* ... same as before ... */ }
-    async function deleteRule(type, text) { /* ... same as before ... */ }
-    async function saveExistingRuleChanges() { /* ... same as before ... */ }
-    function clearConfigForm() { /* ... same as before ... */ }
-    function readFile(file) { return new Promise((resolve, reject) => { /* ... same as before ... */ }); }
-    // All other functions and event listeners are assumed to be complete here.
-    
+    function renderExistingRulesTables(editRules = [], noteRules = []) { /* Implementation here */ }
+    async function deleteRule(type, text) { /* Implementation here */ }
+    async function saveExistingRuleChanges() { /* Implementation here */ }
+    function clearConfigForm() { /* Implementation here */ }
+    function readFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, {type: 'array'}); const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]); resolve(jsonData); } catch (err) { reject(err); } }; reader.onerror = reject; reader.readAsArrayBuffer(file); }); }
+
     // --- EVENT LISTENERS ---
     reportBuilderTeam.addEventListener('change', () => {
         const teamId = parseInt(reportBuilderTeam.value, 10);
@@ -631,13 +630,17 @@ document.addEventListener('DOMContentLoaded', () => {
     reportBuilderCategory.addEventListener('change', () => {
         const teamId = parseInt(reportBuilderTeam.value, 10);
         const categoryId = parseInt(reportBuilderCategory.value, 10);
+        
         builderContainer.classList.add('d-none');
-        reportBuilderForm.reset();
-        document.getElementById('metricClaimCount').checked = true;
+        
+        // THE FIX: The problematic form.reset() line is removed from here.
+        // We will manually clear and repopulate what we need.
 
         if (!teamId || !categoryId) return;
         
-        populateBuilderChecklist();
+        populateBuilderChecklist(); 
+        
+        document.getElementById('metricClaimCount').checked = true;
 
         const existingConfig = allReportConfigs.find(c => c.team_id === teamId && c.category_id === categoryId);
         if (existingConfig) {
@@ -651,6 +654,7 @@ document.addEventListener('DOMContentLoaded', () => {
             deleteReportLayoutBtn.disabled = true;
             deleteReportLayoutBtn.removeAttribute('data-config-id');
         }
+
         builderContainer.classList.remove('d-none');
     });
 
@@ -683,7 +687,7 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error('Failed to delete layout.');
             alert('Report layout deleted.');
             await loadAllData();
-            reportBuilderForm.reset();
+            reportBuilderForm.reset(); // reset is safe here as it's a destructive action.
             builderContainer.classList.add('d-none');
         } catch (error) { alert(`Error: ${error.message}`); }
     });
