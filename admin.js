@@ -150,11 +150,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 apiCall(API.CLIENT_TEAM)
             ]);
             
-            state.allTeams = teams;
-            state.allCategories = categories;
-            state.allClientConfigs = configs;
-            state.allClientTeamAssociations = clientTeams;
-
+            state.allTeams = Array.isArray(teams) ? teams : [];
+            state.allCategories = Array.isArray(categories) ? categories : [];            
+            state.allClientConfigs = Array.isArray(configs) ? configs : [];            
+            state.allClientTeamAssociations = Array.isArray(clientTeams) ? clientTeams : [];
+            
             // Re-render all UI components that depend on this data.
             renderTeamList();
             populateTeamDropdown();
