@@ -24,12 +24,22 @@ exports.handler = async function(event) {
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
+                    // First, delete all existing associations for this config_id
                     await client.query('DELETE FROM client_team_associations WHERE config_id = $1;', [config_id]);
                     
+                    // If there are new team_ids to associate, insert them.
                     if (team_ids.length > 0) {
-                        const values = team_ids.map(team_id => `(${parseInt(config_id)}, ${parseInt(team_id)})`).join(',');
-                        const sql = `INSERT INTO client_team_associations (config_id, team_id) VALUES ${values};`;
-                        await client.query(sql);
+                        // CORRECTED: Use a parameterized query to prevent SQL injection.
+                        // We build a query with multiple value sets and pass all values in a single flat array.
+                        const values = [];
+                        const valuePlaceholders = team_ids.map((team_id, index) => {
+                            const paramIndex = index * 2;
+                            values.push(config_id, team_id);
+                            return `($${paramIndex + 1}, $${paramIndex + 2})`;
+                        }).join(',');
+
+                        const sql = `INSERT INTO client_team_associations (config_id, team_id) VALUES ${valuePlaceholders};`;
+                        await client.query(sql, values);
                     }
 
                     await client.query('COMMIT');
