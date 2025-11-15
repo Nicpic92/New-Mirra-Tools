@@ -162,6 +162,12 @@
         const standardFields = [
              { key: 'claimId', displayName: 'Claim ID / Number' }, { key: 'age', displayName: 'Age (in days)' }, { key: 'netPayment', displayName: 'Net Payment Amount' }, { key: 'state', displayName: 'Claim State' }, { key: 'status', displayName: 'Claim Status' }, { key: 'networkStatus', displayName: 'Network Status' }, { key: 'providerName', displayName: 'Billing Provider Name' }, { key: 'edit', displayName: 'Claim Edits' }, { key: 'notes', displayName: 'Claim Notes' }, { key: 'totalCharges', displayName: 'Total Billed Amount' }, { key: 'dsnp', displayName: 'DSNP Status' }, { key: 'payer', displayName: 'Payer Name' }, { key: 'claimCategory', displayName: 'Category' }, { key: 'claimType', displayName: 'Claim Type' }, { key: 'receivedDate', displayName: 'Received Date' }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID' }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI' }, { key: 'patientName', displayName: 'Patient Name' }, { key: 'subscriberId', displayName: 'Subscriber ID' }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name' }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI' }, { key: 'dosFrom', displayName: 'Date of Service (From)' }, { key: 'dosTo', displayName: 'Date of Service (To)' }, { key: 'cleanAge', displayName: 'Clean Age' }, { key: 'pbpName', displayName: 'PBP Name' }, { key: 'planName', displayName: 'Plan Name' }, { key: 'activityLog', displayName: 'Activity Log Description' }, { key: 'activityUser', displayName: 'Activity Performed By' }, { key: 'activityDate', displayName: 'Activity Performed On' }
         ];
+        
+        const availableMetrics = [
+            { key: 'count', displayName: 'Number of Claims' },
+            { key: 'avgAge', displayName: 'Average Claim Age' },
+            { key: 'avgCleanAge', displayName: 'Average Clean Age' }
+        ];
 
         // --- SMART getVal FUNCTION ---
         const getVal = (claim, standardKey, mappings) => {
@@ -407,6 +413,7 @@
             }
         }
         
+        // --- CORRECTED `downloadTeamReport` FUNCTION ---
         function downloadTeamReport(teamName, allActionableClaims) {
             const teamClaims = allActionableClaims.filter(c => c.team_name === teamName);
             if (teamClaims.length === 0) return alert(`No claims for team: ${teamName}`);
@@ -414,103 +421,99 @@
             const wb = XLSX.utils.book_new();
             const today = new Date().toISOString().slice(0, 10);
 
-            // Step 1: Group claims by the report format that should apply to them.
-            // This is the definitive, robust grouping logic.
-            const claimsByReportFormat = teamClaims.reduce((acc, claim) => {
-                const teamId = claim.team_id;
-                const categoryId = claim.id; // This is the category's DB ID
+            // Create a map of standard field keys to their display names for easy header lookup
+            const standardFieldMap = new Map(standardFields.map(f => [f.key, f.displayName]));
+            availableMetrics.forEach(m => standardFieldMap.set(m.key, m.displayName));
 
-                // Find the specific report layout using stable IDs.
+            const claimsByReportFormat = teamClaims.reduce((acc, claim) => {
+                // Ensure IDs are treated as numbers for a reliable lookup.
+                const teamId = parseInt(claim.team_id, 10);
+                const categoryId = parseInt(claim.id, 10); // This is the category's DB ID
+
+                // Robust lookup for the custom report configuration
                 const customReportConfig = (teamId && categoryId)
-                    ? teamReportConfigs.find(rc => rc.team_id == teamId && rc.category_id == categoryId)
+                    ? teamReportConfigs.find(rc => rc.team_id === teamId && rc.category_id === categoryId)
                     : null;
 
-                let key;
-                // If a config is found, the key is its ID. All claims for this config go together.
-                if (customReportConfig) {
-                    key = `config_${customReportConfig.id}`;
-                } else {
-                    // Otherwise, the key is the category name. These will be dumped as raw data.
-                    key = claim.category || 'Uncategorized';
-                }
-                
+                const key = customReportConfig ? `config_${customReportConfig.id}` : (claim.category || 'Uncategorized');
                 (acc[key] = acc[key] || []).push(claim);
                 return acc;
             }, {});
 
-            // Step 2: Iterate over the grouped formats and generate a sheet for each.
             for (const key in claimsByReportFormat) {
                 const claimsInGroup = claimsByReportFormat[key];
-                if (!claimsInGroup || claimsInGroup.length === 0) continue;
+                const categoryName = claimsInGroup[0].category;
+                let reportData = [];
+                let headers = [];
 
-                let reportData;
-                const categoryName = claimsInGroup[0].category; // Use the first claim's category for the sheet name.
-
-                // If the key indicates a custom configuration, build the aggregated report.
                 if (key.startsWith('config_')) {
-                    const configId = key.split('_')[1];
-                    const customReportConfig = teamReportConfigs.find(rc => rc.id == configId);
+                    const configId = parseInt(key.split('_')[1], 10);
+                    const customReportConfig = teamReportConfigs.find(rc => rc.id === configId);
                     
                     if (customReportConfig && customReportConfig.report_config_data) {
-                        const { groupBy, metrics, sourceConfigId } = customReportConfig.report_config_data;
+                        const { dataColumns = [], metrics = [], groupBy = [], sourceConfigId } = customReportConfig.report_config_data;
                         const sourceConfig = allConfigs.find(c => c.id == sourceConfigId);
                         
                         if (!sourceConfig) {
-                            console.error(`Source config ID ${sourceConfigId} not found. Cannot build report for '${categoryName}'.`);
                             reportData = claimsInGroup.map(claim => ({ ...claim.original, 'ERROR': `Could not find Source Config ID ${sourceConfigId}` }));
                         } else {
                             const reportMappings = sourceConfig.config_data.columnMappings;
-                            const standardFieldMap = new Map(standardFields.map(f => [f.key, f.displayName]));
-                            const aggregatedData = new Map();
+                            // Determine the final list of columns for the report
+                            const allColumnKeys = [...new Set([...dataColumns, ...groupBy, ...metrics])];
+                            headers = allColumnKeys.map(k => standardFieldMap.get(k) || k);
 
-                            claimsInGroup.forEach(claim => {
-                                const groupByKey = groupBy.map(stdKey => getVal(claim.original, stdKey, reportMappings) || 'N/A').join('|');
-                                
-                                if (!aggregatedData.has(groupByKey)) {
-                                    const initialRow = {};
-                                    groupBy.forEach(stdKey => {
+                            // AGGREGATED REPORT (If groupBy is used)
+                            if (groupBy.length > 0) {
+                                const aggregatedData = new Map();
+                                claimsInGroup.forEach(claim => {
+                                    const groupByKey = groupBy.map(stdKey => getVal(claim.original, stdKey, reportMappings) || 'N/A').join('|');
+                                    
+                                    if (!aggregatedData.has(groupByKey)) {
+                                        const initialRow = {};
+                                        // Include all selected data columns, not just groupBy columns
+                                        [...new Set([...dataColumns, ...groupBy])].forEach(stdKey => {
+                                            const header = standardFieldMap.get(stdKey) || stdKey;
+                                            initialRow[header] = getVal(claim.original, stdKey, reportMappings) || 'N/A';
+                                        });
+                                        initialRow._metrics = { count: 0, totalAge: 0, totalCleanAge: 0 };
+                                        aggregatedData.set(groupByKey, initialRow);
+                                    }
+                                    
+                                    const group = aggregatedData.get(groupByKey);
+                                    group._metrics.count++;
+                                    group._metrics.totalAge += (parseInt(getVal(claim.original, 'age', reportMappings), 10) || 0);
+                                    group._metrics.totalCleanAge += (parseInt(getVal(claim.original, 'cleanAge', reportMappings), 10) || 0);
+                                });
+
+                                reportData = Array.from(aggregatedData.values()).map(group => {
+                                    const finalRow = { ...group };
+                                    if (metrics.includes('count')) finalRow[standardFieldMap.get('count')] = group._metrics.count;
+                                    if (metrics.includes('avgAge')) finalRow[standardFieldMap.get('avgAge')] = group._metrics.count > 0 ? (group._metrics.totalAge / group._metrics.count).toFixed(1) : 0;
+                                    if (metrics.includes('avgCleanAge')) finalRow[standardFieldMap.get('avgCleanAge')] = group._metrics.count > 0 ? (group._metrics.totalCleanAge / group._metrics.count).toFixed(1) : 0;
+                                    delete finalRow._metrics;
+                                    return finalRow;
+                                });
+
+                            } 
+                            // DETAILED REPORT (If no groupBy is used)
+                            else {
+                                reportData = claimsInGroup.map(claim => {
+                                    const row = {};
+                                    allColumnKeys.forEach(stdKey => {
                                         const header = standardFieldMap.get(stdKey) || stdKey;
-                                        initialRow[header] = getVal(claim.original, stdKey, reportMappings) || 'N/A';
+                                        row[header] = getVal(claim.original, stdKey, reportMappings);
                                     });
-                                    initialRow._metrics = { count: 0, totalAge: 0, totalCleanAge: 0 };
-                                    aggregatedData.set(groupByKey, initialRow);
-                                }
-                                
-                                const group = aggregatedData.get(groupByKey);
-                                group._metrics.count++;
-                                group._metrics.totalAge += (parseInt(getVal(claim.original, 'age', reportMappings)) || 0);
-                                group._metrics.totalCleanAge += (parseInt(getVal(claim.original, 'cleanAge', reportMappings)) || 0);
-                            });
-
-                            reportData = Array.from(aggregatedData.values()).map(group => {
-                                const finalRow = { ...group };
-                                if (metrics.includes('count')) finalRow['Number of Claims'] = group._metrics.count;
-                                if (metrics.includes('avgAge')) finalRow['Average Claim Age'] = group._metrics.count > 0 ? (group._metrics.totalAge / group._metrics.count).toFixed(1) : 0;
-                                if (metrics.includes('avgCleanAge')) finalRow['Average Clean Age'] = group._metrics.count > 0 ? (group._metrics.totalCleanAge / group._metrics.count).toFixed(1) : 0;
-                                delete finalRow._metrics;
-                                return finalRow;
-                            });
-                            
-                            if (metrics.includes('count')) {
-                                reportData.sort((a,b) => b['Number of Claims'] - a['Number of Claims']);
+                                    return row;
+                                });
                             }
                         }
                     }
                 } else {
-                    // If the key is just a category name, it means no config was found. Dump raw data.
-                    reportData = claimsInGroup.map(claim => ({
-                        ...claim.original,
-                        'Priority Score': claim.priorityScore,
-                        'Category': claim.category,
-                        'Source': claim.source,
-                        'TIN Has W9 in PV': claim.tinHasW9InPV,
-                        'Claim-Specific W9 Attached': claim.w9Attached,
-                        'Approved in PV': claim.pvApproved,
-                        'PV Source/Notes': claim.pvSource
-                    }));
+                    // FALLBACK for categories without a configured report
+                    reportData = claimsInGroup.map(claim => ({ ...claim.original, 'Category': claim.category, 'Assigned Team': claim.team_name }));
                 }
 
-                if (reportData && reportData.length > 0) {
+                if (reportData.length > 0) {
                     reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
                     const ws = XLSX.utils.json_to_sheet(reportData);
                     const safeSheetName = categoryName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
@@ -519,7 +522,6 @@
             }
 
             if (wb.SheetNames.length > 0) {
-                // Sort sheets alphabetically before writing the file for consistency.
                 wb.SheetNames.sort();
                 const clientName = document.getElementById('clientName').value.trim().replace(/ /g, '_') || 'Client';
                 const safeTeamName = teamName.replace(/ /g, '_');
