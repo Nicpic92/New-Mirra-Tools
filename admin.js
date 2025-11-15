@@ -150,11 +150,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 apiCall(API.CLIENT_TEAM)
             ]);
             
+            // Defensive assignment using Array.isArray check to prevent the TypeError
             state.allTeams = Array.isArray(teams) ? teams : [];
-            state.allCategories = Array.isArray(categories) ? categories : [];            
-            state.allClientConfigs = Array.isArray(configs) ? configs : [];            
+            state.allCategories = Array.isArray(categories) ? categories : [];
+            state.allClientConfigs = Array.isArray(configs) ? configs : [];
             state.allClientTeamAssociations = Array.isArray(clientTeams) ? clientTeams : [];
-            
+
             // Re-render all UI components that depend on this data.
             renderTeamList();
             populateTeamDropdown();
@@ -206,11 +207,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
+                    // Read the first sheet found in the workbook
                     const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
                     resolve(jsonData);
                 } catch (err) {
                     console.error("Error parsing XLSX file:", err);
-                    reject(new Error("Failed to parse the XLSX file. Please ensure it's a valid format."));
+                    reject(new Error("Failed to parse the XLSX file. Please ensure it's a valid format and the headers are in the first row."));
                 }
             };
             reader.onerror = (err) => {
@@ -720,12 +722,15 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!file) return;
             try {
                 const data = await readFile(file);
+                // 1. Detect Headers
                 state.detectedHeaders = Object.keys(data[0] || {}).filter(h => h != null && h.toString().trim() !== '');
                 if (state.detectedHeaders.length === 0) {
                     alert("Could not detect any column headers in the uploaded file.");
                     return;
                 }
+                // 2. Clear Mappings (since this is a new file/new config attempt)
                 state.mappingsForEditing = {};
+                // 3. Render the mapping table using the detected headers
                 renderMappingUI();
             } catch (err) {
                 alert(`Error processing file: ${err.message}`);
@@ -823,7 +828,6 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const associatedTeamIds = await apiCall(`${API.CLIENT_TEAM}?config_id=${configId}`);
             const teamIdSet = new Set(associatedTeamIds);
-            dom.clientTeamChecklist.innerHTML = '';
             state.allTeams.sort((a, b) => a.team_name.localeCompare(b.team_name)).forEach(team => {
                 const div = document.createElement('div');
                 div.className = 'form-check';
