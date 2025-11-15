@@ -3,6 +3,7 @@
 const pool = require('./database.js');
 
 exports.handler = async function(event) {
+    // THE FIX: The 'id' parameter is now also destructured from the query string.
     const { id, team_id, category_id } = event.queryStringParameters || {};
 
     try {
@@ -32,7 +33,7 @@ exports.handler = async function(event) {
                 return { statusCode: 201, body: JSON.stringify(result.rows[0]) };
             }
             case 'PUT': {
-                const { team_id, category_id, report_config_data } = JSON.parse(event.body);
+                 const { team_id, category_id, report_config_data } = JSON.parse(event.body);
                  if (!id || !team_id || !category_id || !report_config_data) {
                     return { statusCode: 400, body: 'Missing required parameters for update.' };
                 }
@@ -46,7 +47,7 @@ exports.handler = async function(event) {
                 return { statusCode: 200, body: JSON.stringify(result.rows[0]) };
             }
             case 'DELETE': {
-                // THE FIX: Get the 'id' from the query string parameters, not the body.
+                // THE FIX: The 'id' now correctly comes from the query string parameters.
                 if (!id) return { statusCode: 400, body: 'Missing configuration ID in query string' };
                 await pool.query('DELETE FROM team_report_configurations WHERE id = $1;', [id]);
                 return { statusCode: 200, body: JSON.stringify({ message: 'Report configuration deleted' }) };
