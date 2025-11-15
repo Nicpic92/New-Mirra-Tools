@@ -1,6 +1,6 @@
 // --- START OF FILE categories.js ---
 
-const pool = require('./database.js'); // THE FIX: Use the shared pool
+const pool = require('./database.js');
 
 exports.handler = async function(event) {
     const { id } = event.queryStringParameters || {};
