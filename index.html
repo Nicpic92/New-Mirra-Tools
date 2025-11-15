@@ -4,16 +4,11 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Integrated Claims Dashboard & Analytics Engine</title>
-    <!-- Bootstrap 5 for Layout and Styling -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-    <!-- Bootstrap Icons for Buttons -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
-    <!-- Chart.js for Graphs -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <!-- SheetJS (XLSX) & PapaParse (CSV) Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/papaparse@5.3.0/papaparse.min.js"></script>
-    <!-- Libraries for Advanced PDF Generation -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.1/jspdf.plugin.autotable.min.js"></script>
@@ -33,10 +28,9 @@
 </head>
 <body>
     <div class="container-fluid p-4">
-        <!-- Header Section -->
         <header class="mb-4 d-flex justify-content-between align-items-center">
             <div>
-                <img src="logo.png" alt="Mirra Logo" style="height: 24px; margin-bottom: 10px;" id="logoImage">
+                <img src='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAGQAAAAZCAYAAAC115MjAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAAAJcEhZcwAADsMAAA7DAcdvqGQAAARRSURBVChTPZf/a9NXHMc/520kLg3L+m2DIsO2pKGv+i8u/AN2d9FNHHRwdr3sDqYru93VzU5XV7c3o05FmJ2YqW432B/A68qKVgN6KVoLqS11475c7nN/eR5+25f6eRy9Dw79dE/u+RzP53O+z+f+uD/wPz3uA1fC42BxeBQ8DheDh8HDZfD4WIKzVqv18wDXtrY25s2bx2tra4kX+n54s/M64N/gH5EHgP/7xGQSqe7u7lYhV3Z2Nua9vLzg6enpiF5fXxs/pW/gT+BvIF8A/gb+D3yKq4s/cIX2z/sT29vbH9s2fPLkSbS2trb68OHDH2uVSqXgVqv13wC/AwCgVCrl6unpATs7O9f5z3kK2d/fD6WlpQ9fXV3t5b3LsbGx/Nra2pIbnJ+f/w+Qy+W0W61Wqf56vR729/f/kYmRkZGMYwDwwv17eno251z5dCAQyC0Wi3k/Pz87f7+A0+m0f3Nzc3s4HF65yWZycnL24x+5XC4AIBqNQgUCAcDOzs7O1tZWvL+/P/F+f38/xGIxDAwM/JpZ1GAwSA+HQ6pQKMjJkycxsW6r1UoFAgEMDAwA1NbWwuLiYgwODsLl5eXoQSAQAAgEAhgYGPg1s6jBYJCeSqV0WCwWub+/H/f39+P8/HyPzwCgvb0dAICJiQmcTqflM2tO7+/vTxx+/vx5jMVi4OXl5X9+SAYGBgCcnZ2BIBAIkMvlYDAY/s1sKhgMkobD4Wr5fD6lVqs1Xl5exvX19b/X19e/19fX/4/5AOTz+QCA6urqIC4uDoFAIFqvzS0xMTHxh/sB+Xw+FkqlUqvVajWfz4eBgQF+s1+1Gg01GAxSTqcTYTabEY/HYWdnZ2fr6uoS4z09PUfUajUrVqsVn88nAODs7AxxDeDk5IQpFAopFou1ZtfrNb7pSRQKEQ8fPhzL5/MBnJ2dgXg8/jX/Xzkcju/j8VguFotzTafTmUwmf3Z3d+f0ej0Wi8XpNEql0h+LRYIgCGf39/fLZ8kIBAKEgYGBFysUCgCAi4sLfL58eXl5GSA+Pj6W0+l0Xl5expw1qMVisVgs5tY8Gg22tbVlX1hY+EVFRUVnZ2fBbrd/+3a7/bN+s+v1erFcrvzr6+v/JpPJ4J35xIkTJ3p6eiKz2Xxar9e/+eXl5U8sFitfX1+PcXJyYtq2bQ+n0znnzMxMkMvlcnp6+o/v7+/r7e2t1Wr1u/b29n+1tbXlOI4vW1paHh8fD7lcrtfr9etLS0ufXlxc/PNf319fX//P/wKkUql0OByW0Wj8sFqtYLPZH38+n/+0XC6/n0wmP8lk8s/Z7HY7KBSK/1wul+8qlcq/Vqv1XygU/uX19fUvnU7n/Uaj8f9KpfI/oVDoX6PROBgM/m9sQ+w7g/8/l8sVsNls/qJSqb+lUumPFy9efF6r1T6bzeZ/stnsv6vV6h/X6/X/z6f3k0Ufgs2LwOLwCHgcrAaPw8Pgg/AhOM4X/n/D31/B/gU1Fh0wWlC6GgAAAABJRU5ErkJggg==' alt="Mirra Logo" style="height: 24px; margin-bottom: 10px;" id="logoImage">
                 <h1 class="display-6" style="color: #0d6efd;" id="mainTitle">Claims Processing Daily Dashboard</h1>
             </div>
             <a href="/admin.html" class="btn btn-outline-primary">Go to Admin Console</a>
@@ -60,14 +54,12 @@
             </div>
         </div>
 
-        <!-- File Input Section -->
         <div class="card p-3 mb-4 bg-light border-0">
             <h5 class="card-title fw-bold">2. Upload Claims Data</h5>
             <label for="reportFile" class="form-label">Select an XLSX or CSV file to begin analysis.</label>
             <input class="form-control" type="file" id="reportFile" accept=".xlsx, .csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel">
         </div>
 
-        <!-- Optional Provider Verification Report Upload -->
         <div class="card p-3 mb-4">
             <h5 class="card-title fw-bold">3. Optional: Upload Provider Verification Data</h5>
             <label for="providerReportFile" class="form-label">Select the corresponding provider verification report. This will enrich the work queue with W9 and approval statuses.</label>
@@ -75,20 +67,17 @@
         </div>
         
         <div id="dashboardContent" style="display: none;">
-            <!-- Download Buttons Section -->
             <div class="card p-3 mb-4">
                 <h5 class="card-title fw-bold">4. Download Reports</h5>
                 <div id="teamReportButtons" class="d-grid gap-2 d-md-flex mb-3">
                     <p class="text-muted">Process a file to generate download buttons for each team.</p>
                 </div>
                 <div id="specialtyReportButtons">
-                    <!-- L1 Monitor button will be added here by JS -->
-                </div>
+                    </div>
                  <hr>
                  <button class="btn btn-dark w-100" id="generatePdfBtn">Download Detailed PDF Summary</button>
             </div>
 
-            <!-- Tab Navigation -->
             <ul class="nav nav-tabs" id="mainTabs" role="tablist">
                 <li class="nav-item" role="presentation">
                     <button class="nav-link active" id="dashboard-tab" data-bs-toggle="tab" data-bs-target="#dashboard-pane" type="button" role="tab">Full Analytics Dashboard</button>
@@ -98,9 +87,7 @@
                 </li>
             </ul>
 
-            <!-- Tab Content -->
             <div class="tab-content border border-top-0 p-3 bg-white">
-                <!-- Dashboard Pane -->
                 <div class="tab-pane fade show active" id="dashboard-pane" role="tabpanel">
                     <div id="executive-summary-section" class="dashboard-section">
                         <h2 class="h4 text-muted mb-4" style="font-weight: 300;">Executive Summary</h2>
@@ -108,7 +95,6 @@
                     </div>
                 </div>
 
-                <!-- Work Queue Pane -->
                 <div class="tab-pane fade" id="work-queue-pane" role="tabpanel">
                     <div class="section-header"><h2 class="h5">Intelligent Operational Work Queue</h2></div>
                     <div class="card p-3 mb-3 bg-light border-0">
@@ -147,10 +133,6 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
-    <!--
-    The entire <script> block that was here has been moved to index.js.
-    We now load it as a module. This is cleaner and more maintainable.
-    -->
     <script src="index.js" type="module"></script>
 </body>
 </html>
