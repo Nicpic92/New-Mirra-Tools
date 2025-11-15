@@ -813,7 +813,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- EVENT LISTENERS ---
     configList.addEventListener('click', (e) => { if (e.target.classList.contains('config-name')) { e.preventDefault(); const configId = parseInt(e.target.dataset.configId, 10); editConfig(configId); } });
     configForm.addEventListener('submit', async (e) => { e.preventDefault(); const columnMappings = {}; mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; }); const id = configIdInput.value; const pdfConfig = serializePdfLayout(); const config_data = { clientName: clientNameInput.value, columnMappings, pdfConfig }; const method = id ? 'PUT' : 'POST'; const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API; try { const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) }); if(!res.ok) throw new Error(`Server responded with ${res.status}`); alert(`Configuration ${id ? 'updated' : 'created'} successfully!`); clearConfigForm(); await loadAllData(); } catch (error) { console.error('Failed to save config:', error); alert(`Failed to save configuration: ${error.message}`); } });
-    reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; readFile(file).then(data => { const headers = Object.keys(data[0] || {}); detectedHeaders = headers.filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file."); return; } mappingsForEditing = {}; // Clear old mappings for a new file renderMappingUI(); }).catch(err => alert(`Error processing file: ${err.message}`)); });
+    reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; readFile(file).then(data => { const headers = Object.keys(data[0] || {}); detectedHeaders = headers.filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file."); return; } mappingsForEditing = {}; renderMappingUI(); }).catch(err => alert(`Error processing file: ${err.message}`)); });
     clearBtn.addEventListener('click', clearConfigForm);
     
     newTeamForm.addEventListener('submit', async (e) => { e.preventDefault(); const name = newTeamNameInput.value.trim(); if (!name) return; try { const response = await fetch(TEAMS_API, { method: 'POST', body: JSON.stringify({ team_name: name }) }); if (!response.ok) throw new Error('Failed to add team.'); newTeamNameInput.value = ''; await loadAllData(); } catch (error) { alert(error.message); } });
@@ -887,7 +887,6 @@ document.addEventListener('DOMContentLoaded', () => {
             downloadRulesBtn.disabled = false;
             copyRulesBtn.disabled = false;
 
-            // Populate the "Copy Rules" modal dropdown, excluding the current client
             copyRulesSourceConfigSelect.innerHTML = '<option value="" selected disabled>Select a source client...</option>';
             allClientConfigs.filter(c => c.id != configId).forEach(c => copyRulesSourceConfigSelect.add(new Option(c.config_name, c.id)));
 
@@ -955,7 +954,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!targetConfigId || !sourceConfigId) return alert('Please select both a source and target client.');
         if(!copyEditsCheckbox.checked && !copyNotesCheckbox.checked) return alert('Please select at least one rule type to copy.');
 
-        // 1. Fetch source rules
         let sourceEditRules = [], sourceNoteRules = [];
         const [editRes, noteRes] = await Promise.all([
             fetch(`${RULES_API}?type=edit&config_id=${sourceConfigId}`),
@@ -964,7 +962,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (editRes.ok) sourceEditRules = await editRes.json();
         if (noteRes.ok) sourceNoteRules = await noteRes.json();
 
-        // 2. Filter out rules that already exist in the target
         const existingEditTexts = new Set(activeEditRules.map(r => r.text));
         const existingNoteTexts = new Set(activeNoteRules.map(r => r.text));
         
@@ -976,7 +973,6 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // 3. Save the new rules to the target
         try {
             await Promise.all([
                 newEditRules.length > 0 ? fetch(`${RULES_API}?type=edit&config_id=${targetConfigId}`, { method: 'POST', body: JSON.stringify(newEditRules) }) : Promise.resolve(),
@@ -986,7 +982,6 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Successfully copied ${newEditRules.length} edit rule(s) and ${newNoteRules.length} note rule(s).`);
             copyRulesModal.hide();
             
-            // 4. Refresh the view
             await loadRulesForConfig(targetConfigId);
             renderExistingRulesTables(activeEditRules, activeNoteRules);
 
