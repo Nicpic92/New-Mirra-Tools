@@ -18,6 +18,11 @@
             padding: 10px;
             border-radius: 0.375rem;
         }
+        /* Style for the column ordering list */
+        #columnOrderList li {
+            cursor: grab;
+            background-color: #f8f9fa;
+        }
     </style>
 </head>
 <body>
@@ -55,22 +60,27 @@
                         <input type="hidden" id="teamReportConfigId">
                         
                         <div class="row">
-                            <div class="col-md-6">
-                                <label class="step-header">4. Group By Columns</label>
-                                <div id="teamReportColumns" class="form-check-group bg-white mb-3">
-                                    <p class="text-muted small">Select a client configuration to see available columns.</p>
-                                </div>
+                            <!-- CORRECTED: Redesigned the form for more control -->
+                            <div class="col-md-4">
+                                <label class="step-header">4. Select Data Columns</label>
+                                <p class="small text-muted">These are the raw data fields that will be included in the report.</p>
+                                <div id="reportDataColumns" class="form-check-group bg-white mb-3"></div>
                             </div>
-                            <div class="col-md-6">
+                            <div class="col-md-4">
                                 <label class="step-header">5. Select Metrics</label>
-                                <div id="teamReportMetrics" class="form-check-group bg-white mb-3">
-                                    <p class="text-muted small">Select a client configuration to see available metrics.</p>
-                                </div>
+                                <p class="small text-muted">These are calculated values that will be added to the report.</p>
+                                <div id="reportMetrics" class="form-check-group bg-white mb-3"></div>
+                            </div>
+                            <div class="col-md-4">
+                                <label class="step-header">6. Define Aggregation (Group By)</label>
+                                <p class="small text-muted">Select which of your chosen data columns should be used to group the results.</p>
+                                <div id="reportGroupByColumns" class="form-check-group bg-white mb-3"></div>
                             </div>
                         </div>
                         
+                        <hr>
                         <div class="mb-3">
-                            <label for="teamReportTitle" class="form-label"><b>6. Report Title Template (Optional)</b></label>
+                            <label for="teamReportTitle" class="form-label"><b>7. Report Title Template (Optional)</b></label>
                             <input type="text" class="form-control" id="teamReportTitle" placeholder="{teamName} - {categoryName} Summary {date}">
                             <div class="form-text">This is currently not used in the XLSX output but can be stored for future use.</div>
                         </div>
@@ -101,8 +111,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const builderHeader = document.getElementById('builderHeader');
     const reportBuilderForm = document.getElementById('reportBuilderForm');
     const teamReportConfigIdInput = document.getElementById('teamReportConfigId');
-    const teamReportColumns = document.getElementById('teamReportColumns');
-    const teamReportMetrics = document.getElementById('teamReportMetrics');
+    // CORRECTED: Updated DOM element references for the new form structure
+    const reportDataColumns = document.getElementById('reportDataColumns');
+    const reportMetrics = document.getElementById('reportMetrics');
+    const reportGroupByColumns = document.getElementById('reportGroupByColumns');
     const teamReportTitleInput = document.getElementById('teamReportTitle');
     const saveReportLayoutBtn = document.getElementById('saveReportLayoutBtn');
     const deleteReportLayoutBtn = document.getElementById('deleteReportLayoutBtn');
@@ -112,6 +124,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const standardFields = [
         { key: 'claimId', displayName: 'Claim ID / Number' }, { key: 'age', displayName: 'Age (in days)' }, { key: 'netPayment', displayName: 'Net Payment Amount' }, { key: 'state', displayName: 'Claim State' }, { key: 'status', displayName: 'Claim Status' }, { key: 'networkStatus', displayName: 'Network Status' }, { key: 'providerName', displayName: 'Billing Provider Name' }, { key: 'edit', displayName: 'Claim Edits' }, { key: 'notes', displayName: 'Claim Notes' }, { key: 'totalCharges', displayName: 'Total Billed Amount' }, { key: 'dsnp', displayName: 'DSNP Status' }, { key: 'payer', displayName: 'Payer Name' }, { key: 'claimCategory', displayName: 'Category' }, { key: 'claimType', displayName: 'Claim Type' }, { key: 'receivedDate', displayName: 'Received Date' }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID' }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI' }, { key: 'patientName', displayName: 'Patient Name' }, { key: 'subscriberId', displayName: 'Subscriber ID' }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name' }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI' }, { key: 'dosFrom', displayName: 'Date of Service (From)' }, { key: 'dosTo', displayName: 'Date of Service (To)' }, { key: 'cleanAge', displayName: 'Clean Age' }, { key: 'pbpName', displayName: 'PBP Name' }, { key: 'planName', displayName: 'Plan Name' }, { key: 'activityLog', displayName: 'Activity Log Description' }, { key: 'activityUser', displayName: 'Activity Performed By' }, { key: 'activityDate', displayName: 'Activity Performed On' }
+    ];
+
+    const availableMetrics = [
+        { key: 'count', displayName: 'Number of Claims', required: ['claimId'] },
+        { key: 'avgAge', displayName: 'Average Claim Age', required: ['age'] },
+        { key: 'avgCleanAge', displayName: 'Average Clean Age', required: ['cleanAge'] }
     ];
 
     // --- DATA LOADING ---
@@ -125,13 +143,11 @@ document.addEventListener('DOMContentLoaded', () => {
             allClientConfigs = await configRes.json();
             allTeamReportConfigs = await teamReportsRes.json();
             
-            // Populate Teams
             reportBuilderTeam.innerHTML = '<option value="">Select a team...</option>';
             allTeams.sort((a,b) => a.team_name.localeCompare(b.team_name)).forEach(team => {
                 reportBuilderTeam.add(new Option(team.team_name, team.id));
             });
             
-            // Populate Client Configs
             columnSourceConfig.innerHTML = '<option value="">Select a config...</option>';
             allClientConfigs.sort((a,b) => a.config_name.localeCompare(b.config_name)).forEach(config => {
                 columnSourceConfig.add(new Option(config.config_name, config.id));
@@ -145,38 +161,34 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- UI RENDERING & LOGIC ---
 
-    function populateColumnsAndMetrics() {
+    // CORRECTED: This function now populates all three sections of the form.
+    function populateBuilderCheckboxes() {
         const configId = columnSourceConfig.value;
         const selectedConfig = allClientConfigs.find(c => c.id == configId);
-        teamReportColumns.innerHTML = '';
-        teamReportMetrics.innerHTML = '';
+        
+        // Clear all checkbox containers
+        [reportDataColumns, reportMetrics, reportGroupByColumns].forEach(container => {
+            container.innerHTML = '<p class="text-muted small p-2">Select a client configuration to see available options.</p>';
+        });
 
-        if (!selectedConfig || !selectedConfig.config_data.columnMappings) {
-            teamReportColumns.innerHTML = '<p class="text-muted small">Select a client configuration to see available columns.</p>';
-            teamReportMetrics.innerHTML = '<p class="text-muted small">Select a client configuration to see available metrics.</p>';
-            return;
-        }
+        if (!selectedConfig || !selectedConfig.config_data.columnMappings) return;
+
+        [reportDataColumns, reportMetrics, reportGroupByColumns].forEach(c => c.innerHTML = ''); // Clear for real now
 
         const mappedKeys = new Set(Object.keys(selectedConfig.config_data.columnMappings));
         
-        // Populate Columns for Grouping
+        // Populate "Data Columns"
         standardFields.forEach(field => {
             if (mappedKeys.has(field.key)) {
                 const div = document.createElement('div');
                 div.className = 'form-check';
-                div.innerHTML = `<input class="form-check-input" type="checkbox" value="${field.key}" id="col_${field.key}">
+                div.innerHTML = `<input class="form-check-input data-column-checkbox" type="checkbox" value="${field.key}" id="col_${field.key}">
                                  <label class="form-check-label" for="col_${field.key}">${field.displayName}</label>`;
-                teamReportColumns.appendChild(div);
+                reportDataColumns.appendChild(div);
             }
         });
 
-        // Populate Metrics
-        const availableMetrics = [
-            { key: 'count', displayName: 'Count of Claims', required: ['claimId'] },
-            { key: 'avgAge', displayName: 'Average Claim Age', required: ['age'] },
-            { key: 'avgCleanAge', displayName: 'Average Clean Age', required: ['cleanAge'] }
-        ];
-
+        // Populate "Metrics"
         availableMetrics.forEach(metric => {
             const hasRequiredCols = metric.required.every(key => mappedKeys.has(key));
             if (hasRequiredCols) {
@@ -184,23 +196,41 @@ document.addEventListener('DOMContentLoaded', () => {
                 div.className = 'form-check';
                 div.innerHTML = `<input class="form-check-input" type="checkbox" value="${metric.key}" id="met_${metric.key}">
                                  <label class="form-check-label" for="met_${metric.key}">${metric.displayName}</label>`;
-                teamReportMetrics.appendChild(div);
+                reportMetrics.appendChild(div);
             }
         });
         
-        if (teamReportColumns.children.length === 0) {
-             teamReportColumns.innerHTML = '<p class="text-danger small">The selected config has no columns mapped.</p>';
-        }
-        if (teamReportMetrics.children.length === 0) {
-             teamReportMetrics.innerHTML = '<p class="text-danger small">The selected config lacks the required columns for any metrics (e.g., Age).</p>';
-        }
+        // Add event listener to dynamically update the "Group By" options
+        reportDataColumns.addEventListener('change', updateGroupByOptions);
     }
+    
+    // CORRECTED: New function to update the "Group By" section based on "Data Columns"
+    function updateGroupByOptions() {
+        const selectedDataColumns = Array.from(reportDataColumns.querySelectorAll('input:checked'));
+        reportGroupByColumns.innerHTML = '';
+
+        if (selectedDataColumns.length === 0) {
+            reportGroupByColumns.innerHTML = '<p class="text-muted small p-2">Select at least one data column to see grouping options.</p>';
+            return;
+        }
+
+        selectedDataColumns.forEach(checkbox => {
+            const field = standardFields.find(f => f.key === checkbox.value);
+            if (field) {
+                const div = document.createElement('div');
+                div.className = 'form-check';
+                div.innerHTML = `<input class="form-check-input" type="checkbox" value="${field.key}" id="group_${field.key}">
+                                 <label class="form-check-label" for="group_${field.key}">${field.displayName}</label>`;
+                reportGroupByColumns.appendChild(div);
+            }
+        });
+    }
+
 
     function loadExistingReportConfig() {
         const teamId = reportBuilderTeam.value;
         const categoryId = reportBuilderCategory.value;
 
-        // Reset and hide the main builder form first
         builderContainer.classList.add('d-none');
         reportBuilderForm.reset();
         teamReportConfigIdInput.value = '';
@@ -224,27 +254,34 @@ document.addEventListener('DOMContentLoaded', () => {
             teamReportTitleInput.value = layout.reportTitle || '';
             columnSourceConfig.value = layout.sourceConfigId || '';
             
-            populateColumnsAndMetrics(); // Populate checkboxes based on saved config
+            populateBuilderCheckboxes();
             
-            // Check the saved columns and metrics
-            if (layout.groupBy) {
-                layout.groupBy.forEach(key => {
+            // CORRECTED: Check all saved fields based on the enhanced data structure
+            if (layout.dataColumns) {
+                layout.dataColumns.forEach(key => {
                     const checkbox = document.getElementById(`col_${key}`);
                     if (checkbox) checkbox.checked = true;
                 });
             }
-            if (layout.metrics) {
+             if (layout.metrics) {
                 layout.metrics.forEach(key => {
                     const checkbox = document.getElementById(`met_${key}`);
                     if (checkbox) checkbox.checked = true;
                 });
             }
-
+            // Manually trigger the update to populate the group-by section
+            updateGroupByOptions();
+            if (layout.groupBy) {
+                layout.groupBy.forEach(key => {
+                    const checkbox = document.getElementById(`group_${key}`);
+                    if (checkbox) checkbox.checked = true;
+                });
+            }
+            
             deleteReportLayoutBtn.disabled = false;
         } else {
-            // No existing config, just clear the form
             columnSourceConfig.value = '';
-            populateColumnsAndMetrics();
+            populateBuilderCheckboxes();
         }
         
         builderContainer.classList.remove('d-none');
@@ -260,21 +297,24 @@ document.addEventListener('DOMContentLoaded', () => {
             return alert('A team, category, and source client configuration must be selected.');
         }
 
-        const selectedColumns = Array.from(teamReportColumns.querySelectorAll('input:checked')).map(cb => cb.value);
-        const selectedMetrics = Array.from(teamReportMetrics.querySelectorAll('input:checked')).map(cb => cb.value);
+        // CORRECTED: Collect data from the new form structure
+        const selectedDataColumns = Array.from(reportDataColumns.querySelectorAll('input:checked')).map(cb => cb.value);
+        const selectedMetrics = Array.from(reportMetrics.querySelectorAll('input:checked')).map(cb => cb.value);
+        const selectedGroupBy = Array.from(reportGroupByColumns.querySelectorAll('input:checked')).map(cb => cb.value);
 
-        if (selectedColumns.length === 0) {
-            return alert('Please select at least one column to group by.');
+        if (selectedDataColumns.length === 0 && selectedMetrics.length === 0) {
+            return alert('Please select at least one data column or metric for the report.');
         }
-        if (selectedMetrics.length === 0) {
-            return alert('Please select at least one metric to calculate.');
+        if (selectedGroupBy.length === 0 && selectedMetrics.length > 0) {
+            return alert('You must select at least one "Group By" column when including metrics.');
         }
 
         const report_config_data = {
             sourceConfigId: sourceConfigId,
             reportTitle: teamReportTitleInput.value.trim(),
-            groupBy: selectedColumns,
-            metrics: selectedMetrics
+            dataColumns: selectedDataColumns,
+            metrics: selectedMetrics,
+            groupBy: selectedGroupBy
         };
         
         const method = configId ? 'PUT' : 'POST';
@@ -289,7 +329,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error(`Server responded with ${res.status}`);
             
             alert('Team report layout saved successfully!');
-            // Reload configs and refresh UI
             const teamReportsRes = await fetch(TEAM_REPORTS_API);
             allTeamReportConfigs = await teamReportsRes.json();
             loadExistingReportConfig();
@@ -309,7 +348,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error(`Server responded with ${res.status}`);
             alert('Report layout deleted.');
             
-            // Reload configs and reset UI
             const teamReportsRes = await fetch(TEAM_REPORTS_API);
             allTeamReportConfigs = await teamReportsRes.json();
             loadExistingReportConfig();
@@ -339,9 +377,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     reportBuilderCategory.addEventListener('change', loadExistingReportConfig);
     columnSourceConfig.addEventListener('change', () => {
-        // Repopulate columns, but don't check any boxes automatically
-        populateColumnsAndMetrics();
-        // User must re-select their columns if they change the source config
+        populateBuilderCheckboxes();
     });
 
     saveReportLayoutBtn.addEventListener('click', saveTeamReportLayout);
