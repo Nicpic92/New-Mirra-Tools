@@ -318,7 +318,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeEditRules = [], activeNoteRules = [];
     let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
     
-    // THE FIX: State for uncategorized rules needs to be preserved to allow re-rendering
+    // State for uncategorized rules needs to be preserved to allow re-rendering
     let uncategorizedEdits = [], uncategorizedNotes = [];
 
     // Triage State
@@ -438,24 +438,48 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- RULE MANAGEMENT LOGIC ---
     function processUploadedReport(data) {
+        // THE FIX: Only discover rules from claims with an actionable status.
+        const allowedStatuses = ['PEND', 'MANAGEMENTREVIEW', 'ONHOLD'];
+        
+        // Find the column names for the fields we need to check, based on the current client's mapping.
+        const { 
+            edit: editColumn, 
+            notes: notesColumn, 
+            status: statusColumn 
+        } = columnMappingsForCategorization;
+
+        // Requirement check: We cannot filter by status if the status column isn't mapped.
+        if (!statusColumn) {
+            alert("Action Required: To discover new rules, the 'Claim Status' standard field must be mapped in this client's configuration. Please edit the configuration and map the correct column.");
+            categorizationReportUploader.value = ''; // Clear the file input
+            return;
+        }
+
         const detectedEdits = new Set(), detectedNotes = new Set();
-        const { edit: editColumn, notes: notesColumn } = columnMappingsForCategorization;
+        
         data.forEach(row => {
-            const editValue = (row[editColumn] || '').toString().trim();
-            if (editValue && !activeEditRules.some(r => r.text === editValue)) detectedEdits.add(editValue);
-            const noteValue = (row[notesColumn] || '').toString().trim();
-            if (noteValue && !activeNoteRules.some(r => r.text === noteValue)) detectedNotes.add(noteValue);
+            const claimStatus = (row[statusColumn] || '').toString().toUpperCase().trim();
+
+            // Only process rows where the claim status is one of the allowed types.
+            if (allowedStatuses.includes(claimStatus)) {
+                const editValue = (row[editColumn] || '').toString().trim();
+                if (editValue && !activeEditRules.some(r => r.text === editValue)) {
+                    detectedEdits.add(editValue);
+                }
+                
+                const noteValue = (row[notesColumn] || '').toString().trim();
+                if (noteValue && !activeNoteRules.some(r => r.text === noteValue)) {
+                    detectedNotes.add(noteValue);
+                }
+            }
         });
 
-        // THE FIX: Store discovered rules in global state so the UI can be rebuilt later
         uncategorizedEdits = Array.from(detectedEdits).sort((a, b) => a.localeCompare(b));
         uncategorizedNotes = Array.from(detectedNotes).sort((a, b) => a.localeCompare(b));
 
-        // THE FIX: Call a dedicated render function
         renderUncategorizedRulesTables();
     }
     
-    // THE FIX: New function to render the "Discover" tables from global state
     function renderUncategorizedRulesTables() {
         uncategorizedEditsTable.innerHTML = '';
         uncategorizedEdits.forEach(text => {
@@ -475,7 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const hasRules = uncategorizedEdits.length > 0 || uncategorizedNotes.length > 0;
         rulesAssignmentContainer.style.display = hasRules ? 'block' : 'none';
-        noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file.';
+        noRulesFoundDiv.textContent = hasRules ? '' : 'No new, uncategorized items were found in the uploaded file matching the required statuses (Pend, Management Review, On Hold).';
         noRulesFoundDiv.style.display = hasRules ? 'none' : 'block';
     }
 
@@ -496,13 +520,11 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
             alert('Rules saved successfully!');
             
-            // THE FIX: After saving, refresh the underlying rule set and re-render the tables
             await loadRulesForConfig(configId);
-            // Re-process the list of uncategorized items to remove the ones we just saved
             uncategorizedEdits = uncategorizedEdits.filter(edit => !editRulesToSave.some(saved => saved.text === edit));
             uncategorizedNotes = uncategorizedNotes.filter(note => !noteRulesToSave.some(saved => saved.text === note));
-            renderUncategorizedRulesTables(); // Re-render with the remaining items
-            renderExistingRulesTables(activeEditRules, activeNoteRules); // Also refresh the 'Manage' tab
+            renderUncategorizedRulesTables(); 
+            renderExistingRulesTables(activeEditRules, activeNoteRules);
 
         } catch (error) { alert(`Failed to save rules: ${error.message}`); }
     }
@@ -721,7 +743,6 @@ document.addEventListener('DOMContentLoaded', () => {
     reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const sheet = workbook.Sheets[workbook.SheetNames[0]]; if (!sheet) throw new Error("Sheet not found."); const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }); detectedHeaders = (json[0] || []).filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file. Please ensure the first row contains the column names."); return; } renderMappingUI(); } catch (err) { alert(`Error processing file: ${err.message}`); console.error(err); } }; reader.readAsArrayBuffer(file); });
     clearBtn.addEventListener('click', clearConfigForm);
     
-    // THE FIX: Replaced partial state update with a full data reload
     newTeamForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const name = newTeamNameInput.value.trim();
@@ -729,14 +750,13 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const response = await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) });
             if (!response.ok) throw new Error('Failed to add team. It may already exist.');
-            await loadAllData(); // Reload all data to ensure consistency
+            await loadAllData(); 
             newTeamNameInput.value = '';
         } catch (error) {
             alert(error.message);
         }
     });
 
-    // THE FIX: Replaced partial state update with a full data reload and re-rendering of dependent UI
     newCategoryForm.addEventListener('submit', async (e) => {
         e.preventDefault();
         const category_name = newCategoryNameInput.value.trim();
@@ -747,11 +767,10 @@ document.addEventListener('DOMContentLoaded', () => {
             const response = await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) });
             if (!response.ok) throw new Error('Failed to add category. It may already exist.');
 
-            await loadAllData(); // Reload all data to get the new category
+            await loadAllData(); 
             
-            // Now, re-render all UI components that use the category list
-            renderExistingRulesTables(activeEditRules, activeNoteRules); // Refresh 'Manage' tab
-            renderUncategorizedRulesTables(); // Refresh 'Discover' tab
+            renderExistingRulesTables(activeEditRules, activeNoteRules);
+            renderUncategorizedRulesTables();
 
             newCategoryNameInput.value = '';
             l1MonitorCheckbox.checked = false;
