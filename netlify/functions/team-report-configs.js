@@ -3,7 +3,7 @@
 const pool = require('./database.js');
 
 exports.handler = async function(event) {
-    const { team_id, category_id } = event.queryStringParameters || {};
+    const { id, team_id, category_id } = event.queryStringParameters || {};
 
     try {
         switch (event.httpMethod) {
@@ -18,27 +18,36 @@ exports.handler = async function(event) {
                     return { statusCode: 200, body: JSON.stringify(result.rows[0] || null) };
                 }
             }
-            case 'POST': { // Used for both creating and updating
+            case 'POST': {
                 const { team_id, category_id, report_config_data } = JSON.parse(event.body);
                 if (!team_id || !category_id || !report_config_data) {
                     return { statusCode: 400, body: 'Missing required parameters.' };
                 }
-
-                // Use INSERT ON CONFLICT (UPSERT) to handle both create and update in one command.
                 const sql = `
-                    INSERT INTO team_report_configurations (team_id, category_id, report_config_data, last_updated)
-                    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
-                    ON CONFLICT (team_id, category_id)
-                    DO UPDATE SET report_config_data = EXCLUDED.report_config_data, last_updated = CURRENT_TIMESTAMP
+                    INSERT INTO team_report_configurations (team_id, category_id, report_config_data)
+                    VALUES ($1, $2, $3)
                     RETURNING *;
                 `;
-
                 const result = await pool.query(sql, [team_id, category_id, report_config_data]);
                 return { statusCode: 201, body: JSON.stringify(result.rows[0]) };
             }
+            case 'PUT': {
+                const { team_id, category_id, report_config_data } = JSON.parse(event.body);
+                 if (!id || !team_id || !category_id || !report_config_data) {
+                    return { statusCode: 400, body: 'Missing required parameters for update.' };
+                }
+                const sql = `
+                    UPDATE team_report_configurations 
+                    SET team_id = $1, category_id = $2, report_config_data = $3, last_updated = CURRENT_TIMESTAMP
+                    WHERE id = $4
+                    RETURNING *;
+                `;
+                 const result = await pool.query(sql, [team_id, category_id, report_config_data, id]);
+                return { statusCode: 200, body: JSON.stringify(result.rows[0]) };
+            }
             case 'DELETE': {
-                const { id } = JSON.parse(event.body);
-                if (!id) return { statusCode: 400, body: 'Missing configuration ID' };
+                // THE FIX: Get the 'id' from the query string parameters, not the body.
+                if (!id) return { statusCode: 400, body: 'Missing configuration ID in query string' };
                 await pool.query('DELETE FROM team_report_configurations WHERE id = $1;', [id]);
                 return { statusCode: 200, body: JSON.stringify({ message: 'Report configuration deleted' }) };
             }
