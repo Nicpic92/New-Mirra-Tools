@@ -40,8 +40,6 @@ exports.handler = async function(event) {
                 try {
                     await client.query('BEGIN');
                     
-                    // THE FIX: Replace INSERT...ON CONFLICT with a more robust check-then-act logic.
-                    // This avoids reliance on a specific UNIQUE constraint in the database schema.
                     for (const rule of rules) {
                         if (rule.text && rule.category_id) {
                             // 1. Check if a rule with this text and config_id already exists.
