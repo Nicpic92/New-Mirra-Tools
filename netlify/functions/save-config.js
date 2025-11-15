@@ -1,22 +1,29 @@
-// --- START OF FILE save-config.js ---
+// --- START OF FILE save-config.js (Refactored) ---
 
-const pool = require('./database.js'); // THE FIX: Use the shared pool
+const pool = require('./database.js');
+const { log, handleError } = require('./utils/logger.js'); // Import the utility
 
 exports.handler = async function(event, context) {
-    if (event.httpMethod !== 'PUT') {
-        return { statusCode: 405, body: 'Method Not Allowed' };
-    }
-
-    const { id } = event.queryStringParameters || {};
-    
-    if (!id) {
-        return {
-            statusCode: 400,
-            body: JSON.stringify({ error: "Missing configuration ID." }),
-        };
-    }
+    const functionName = 'save-config.js'; // Define function name for context
 
     try {
+        log('INFO', functionName, 'Handler invoked.', { httpMethod: event.httpMethod });
+
+        if (event.httpMethod !== 'PUT') {
+            log('WARN', functionName, `Method Not Allowed: ${event.httpMethod}`);
+            return { statusCode: 405, body: 'Method Not Allowed' };
+        }
+
+        const { id } = event.queryStringParameters || {};
+        
+        if (!id) {
+            log('WARN', functionName, 'Bad Request: Missing configuration ID.');
+            return {
+                statusCode: 400,
+                body: JSON.stringify({ error: "Missing configuration ID." }),
+            };
+        }
+
         const configData = JSON.parse(event.body);
 
         const sql = `
@@ -27,16 +34,16 @@ exports.handler = async function(event, context) {
         
         await pool.query(sql, [configData, id]);
 
+        log('INFO', functionName, `Successfully saved configuration for id: ${id}`);
+
         return {
             statusCode: 200,
             body: JSON.stringify({ message: "Configuration saved successfully!" }),
         };
 
     } catch (error) {
-        console.error("Error in save-config.js:", error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({ error: "Failed to save configuration." }),
-        };
+        // Use the centralized error handler
+        return handleError(error, functionName, event);
     }
 };
+// --- END OF FILE save-config.js (Refactored) ---
