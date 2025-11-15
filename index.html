@@ -422,22 +422,22 @@
                 const customReportConfig = category ? teamReportConfigs.find(rc => rc.team_id === category.team_id && rc.category_id === category.id) : null;
                 
                 let reportData;
-                let isAggregated = false;
 
-                if (customReportConfig?.report_config_data?.groupBy) {
+                // IF a report builder config exists for this team/category, build the aggregated report.
+                if (customReportConfig && customReportConfig.report_config_data) {
                     const { groupBy, metrics, sourceConfigId } = customReportConfig.report_config_data;
                     const sourceConfig = allConfigs.find(c => c.id == sourceConfigId);
                     
                     if (!sourceConfig) {
-                        console.error(`Source config ID ${sourceConfigId} not found for report. Falling back to raw data.`);
+                        console.error(`Source config ID ${sourceConfigId} not found for report. Cannot build aggregated report for '${categoryName}'.`);
+                        // Fallback for this specific tab if the source config is missing
+                        reportData = claimsInCat.map(claim => ({ ...claim.original, 'ERROR': `Could not find Source Config ID ${sourceConfigId}` }));
                     } else {
-                        isAggregated = true;
                         const reportMappings = sourceConfig.config_data.columnMappings;
                         const standardFieldMap = new Map(standardFields.map(f => [f.key, f.displayName]));
                         const aggregatedData = new Map();
 
                         claimsInCat.forEach(claim => {
-                            // Use the specific reportMappings to build the key
                             const groupByKey = groupBy.map(stdKey => getVal(claim.original, stdKey, reportMappings) || 'N/A').join('|');
                             
                             if (!aggregatedData.has(groupByKey)) {
@@ -446,13 +446,11 @@
                                     const header = standardFieldMap.get(stdKey) || stdKey;
                                     initialRow[header] = getVal(claim.original, stdKey, reportMappings) || 'N/A';
                                 });
-                                // Initialize metric collectors
                                 initialRow._metrics = { count: 0, totalAge: 0, totalCleanAge: 0 };
                                 aggregatedData.set(groupByKey, initialRow);
                             }
                             
                             const group = aggregatedData.get(groupByKey);
-                            // Use the specific reportMappings to gather data for metrics
                             group._metrics.count++;
                             group._metrics.totalAge += (parseInt(getVal(claim.original, 'age', reportMappings)) || 0);
                             group._metrics.totalCleanAge += (parseInt(getVal(claim.original, 'cleanAge', reportMappings)) || 0);
@@ -463,23 +461,30 @@
                              if (metrics.includes('count')) finalRow['Number of Claims'] = group._metrics.count;
                              if (metrics.includes('avgAge')) finalRow['Average Claim Age'] = group._metrics.count > 0 ? (group._metrics.totalAge / group._metrics.count).toFixed(1) : 0;
                              if (metrics.includes('avgCleanAge')) finalRow['Average Clean Age'] = group._metrics.count > 0 ? (group._metrics.totalCleanAge / group._metrics.count).toFixed(1) : 0;
-                             delete finalRow._metrics; // clean up helper property
+                             delete finalRow._metrics;
                              return finalRow;
                         });
                         
-                        // Sort by the first metric (usually claim count)
                         if (metrics.includes('count')) {
                             reportData.sort((a,b) => b['Number of Claims'] - a['Number of Claims']);
                         }
                     }
+                } else {
+                    // ELSE, if no config exists, fall back to the raw, enriched data export.
+                    reportData = claimsInCat.map(claim => ({
+                        ...claim.original,
+                        'Priority Score': claim.priorityScore,
+                        'Category': claim.category,
+                        'Source': claim.source,
+                        'TIN Has W9 in PV': claim.tinHasW9InPV,
+                        'Claim-Specific W9 Attached': claim.w9Attached,
+                        'Approved in PV': claim.pvApproved,
+                        'PV Source/Notes': claim.pvSource
+                    }));
                 }
 
-                if (!isAggregated) {
-                    // Fallback to original behavior if no custom report is found or if source config is missing
-                    reportData = claimsInCat.map(claim => ({ ...claim.original, 'Priority Score': claim.priorityScore, 'Category': claim.category, 'Source': claim.source }));
-                }
-
-                if(reportData.length > 0) {
+                if(reportData && reportData.length > 0) {
+                    // These columns are added for manual entry on both aggregated and raw reports
                     reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
                     const ws = XLSX.utils.json_to_sheet(reportData);
                     const safeSheetName = categoryName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
@@ -529,4 +534,4 @@
 
     </script>
 </body>
-</html>
+</html>```
