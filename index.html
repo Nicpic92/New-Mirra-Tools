@@ -155,8 +155,8 @@
         let currentSort = { column: 'priorityScore', direction: 'desc' };
         let currentColumnMappings = {};
         let allConfigs = [];
-        let allCategories = []; // NEW: To store category details
-        let teamReportConfigs = []; // NEW: To store custom report layouts
+        let allCategories = [];
+        let teamReportConfigs = [];
         let categorizationConfig = {
             editRulesMap: new Map(),
             noteRulesMap: new Map()
@@ -172,7 +172,6 @@
         function getClaimCategory(claim) {
             const notes = (getVal(claim, 'notes') || '').toLowerCase();
             const edit = getVal(claim, 'edit');
-
             if (edit && categorizationConfig.editRulesMap.has(edit)) {
                 return { ...categorizationConfig.editRulesMap.get(edit), source: 'Edit Rule' };
             }
@@ -187,7 +186,6 @@
         // --- CONFIGURATION & DATA LOADING ---
         async function loadInitialData() {
             try {
-                // Fetch all data needed for the dashboard to function
                 const [configsRes, categoriesRes, reportsRes] = await Promise.all([
                     fetch('/.netlify/functions/configurations'),
                     fetch('/.netlify/functions/categories'),
@@ -196,12 +194,9 @@
                 allConfigs = await configsRes.json();
                 allCategories = await categoriesRes.json();
                 teamReportConfigs = await reportsRes.json();
-
-                // Populate the main configuration selector
                 const configSelector = document.getElementById('configSelector');
                 configSelector.innerHTML = '<option value="">Load a saved configuration...</option>';
                 allConfigs.forEach(config => configSelector.add(new Option(config.config_name, config.id)));
-
             } catch (error) {
                 console.error('Error loading initial dashboard data:', error);
                 alert('Failed to load critical dashboard configurations. Please refresh the page.');
@@ -224,11 +219,9 @@
                         fetch(`/.netlify/functions/client-rules?type=note&config_id=${selectedId}`)
                     ]);
                     if (!editRes.ok || !noteRes.ok) throw new Error('Failed to fetch rules.');
-
                     const editRules = await editRes.json();
                     const noteRules = await noteRes.json();
                     const categoryMap = new Map(allCategories.map(cat => [cat.id, cat]));
-
                     editRules.forEach(r => {
                         const category = categoryMap.get(r.category_id);
                         if (category) categorizationConfig.editRulesMap.set(r.text, { category: category.category_name, teamId: category.team_id, teamName: category.team_name, send_to_l1_monitor: category.send_to_l1_monitor });
@@ -237,7 +230,6 @@
                         const category = categoryMap.get(r.category_id);
                         if (category) categorizationConfig.noteRulesMap.set(r.text, { category: category.category_name, teamId: category.team_id, teamName: category.team_name, send_to_l1_monitor: category.send_to_l1_monitor });
                     });
-
                 } catch (error) {
                     console.error('Error loading client-specific rules:', error);
                     alert('Could not load categorization rules. Categorization may be incorrect.');
@@ -257,7 +249,6 @@
                 if (event) event.target.value = "";
                 return;
             }
-
             const processAndRender = (data) => {
                 try {
                     const processedData = analyzeAndProcessClaims(data);
@@ -268,17 +259,12 @@
                     document.getElementById('providerReportFile').disabled = false;
                     renderWorkQueue(allClaimsData);
                     document.getElementById('dashboardContent').style.display = 'block';
-                } catch (error) {
-                    console.error("An error occurred during file processing:", error);
-                    alert("Failed to process the file. Check console for details.");
-                }
+                } catch (error) { console.error("An error occurred during file processing:", error); alert("Failed to process the file. Check console for details."); }
             };
-
             if (isReprocessing) {
                 processAndRender(allClaimsData.map(c => c.original));
                 return;
             }
-
             const file = event.target.files[0];
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -289,53 +275,145 @@
             reader.readAsArrayBuffer(file);
         }
         
-        // ... (The rest of your existing functions: analyzeAndProcessClaims, getPriorityScore, renderDashboard, etc.)
-        // These functions have been previously provided and are assumed to be here.
+        function handleProviderFile(event) {
+            const file = event.target.files[0];
+            if (!file || allClaimsData.length === 0) return;
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const workbook = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+                const providerData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+                const headers = Object.keys(providerData[0] || {});
+                const claimIdKey = headers.find(h => h.toLowerCase().includes('claim id'));
+                if(!claimIdKey) return alert("Could not find a 'Claim ID' column in the Provider Verification report.");
+                const w9AttachedKey = headers.find(h => h.toLowerCase().includes('w9 attached'));
+                const isApprovedKey = headers.find(h => h.toLowerCase().includes('isapproved in pv'));
+                const sourceKey = headers.find(h => h.toLowerCase().includes('source in pv'));
+                const providerMap = new Map(providerData.map(row => [row[claimIdKey]?.toString(), { w9Attached: row[w9AttachedKey] || 'N/A', pvApproved: row[isApprovedKey] || 'N/A', pvSource: row[sourceKey] || '' }]));
+                allClaimsData.forEach(claim => Object.assign(claim, providerMap.get(claim.claimId)));
+                if(currentColumnMappings.billingProviderTaxId) {
+                    const tinStatusMap = new Map();
+                    allClaimsData.forEach(claim => {
+                        const tin = getVal(claim.original, 'billingProviderTaxId');
+                        if (tin && claim.w9Attached?.toString().trim().toUpperCase() === 'YES') tinStatusMap.set(tin, 'YES');
+                    });
+                    allClaimsData.forEach(claim => {
+                        const tin = getVal(claim.original, 'billingProviderTaxId');
+                        claim.tinHasW9InPV = tin && tinStatusMap.has(tin) ? 'YES' : 'NO';
+                    });
+                }
+                renderWorkQueue(allClaimsData);
+                alert(`Successfully merged data from ${providerMap.size} records.`);
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
         function analyzeAndProcessClaims(data) {
-            // This function remains largely the same, no changes are needed here.
             const metrics = { totalClaims: 0, totalNetPayment: 0, claimsByStatus: {}, providerCounts: {} };
             const actionableStates = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'];
             const claims = data.map(rawClaim => {
                 const processedClaim = {
+                    claimId: getVal(rawClaim, 'claimId') || 'N/A',
                     state: (getVal(rawClaim, 'state') || 'UNKNOWN').toString().toUpperCase().trim(),
-                    // ... other processed fields
-                    original: rawClaim
+                    status: (getVal(rawClaim, 'status') || 'UNKNOWN').toString().toUpperCase().trim(),
+                    age: parseInt(getVal(rawClaim, 'age') || 0),
+                    netPayment: parseFloat(getVal(rawClaim, 'netPayment') || 0),
+                    providerName: getVal(rawClaim, 'providerName') || 'Unknown',
+                    tinHasW9InPV: 'N/A',
+                    original: rawClaim,
                 };
-                
+                metrics.totalClaims++;
+                if (!isNaN(processedClaim.netPayment)) metrics.totalNetPayment += processedClaim.netPayment;
+                metrics.claimsByStatus[processedClaim.status] = (metrics.claimsByStatus[processedClaim.status] || 0) + 1;
+
                 processedClaim.isActionable = actionableStates.includes(processedClaim.state);
                 if (processedClaim.isActionable) {
-                    const categoryInfo = getClaimCategory(rawClaim);
-                    Object.assign(processedClaim, categoryInfo);
+                    Object.assign(processedClaim, getClaimCategory(rawClaim));
                     processedClaim.priorityScore = getPriorityScore(processedClaim);
                 } else {
                     processedClaim.category = 'N/A';
+                    processedClaim.teamName = 'N/A';
                     processedClaim.priorityScore = -1;
                 }
                 return processedClaim;
             });
-            // ... the rest of the metric calculations
             return { claims, metrics };
         }
         
+        function getPriorityScore(claim) {
+            const totalCharges = parseFloat(getVal(claim.original, 'totalCharges') || 0);
+            const age = parseInt(claim.age || 0);
+            let score = (totalCharges / 500) + (age * 1.5);
+            if (claim.status === 'DENY') score += 100;
+            return Math.round(score);
+        }
+
+        function renderDashboard(claims, metrics) {
+            const fNum = (num) => num.toLocaleString('en-US');
+            const fCur = (num) => num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
+            document.getElementById('executive-summary-cards').innerHTML = `
+                <div class="col-md-6 col-lg-3 mb-4"><div class="card dashboard-card h-100"><div class="metric-label">TOTAL CLAIMS</div><div class="metric-value">${fNum(metrics.totalClaims)}</div></div></div>
+                <div class="col-md-6 col-lg-3 mb-4"><div class="card dashboard-card h-100"><div class="metric-label">TOTAL NET PAYMENT</div><div class="metric-value">${fCur(metrics.totalNetPayment)}</div></div></div>
+                <div class="col-md-6 col-lg-3 mb-4"><div class="card dashboard-card h-100"><div class="metric-label">PENDING</div><div class="metric-value">${fNum(metrics.claimsByStatus['PEND'] || 0)}</div></div></div>
+                <div class="col-md-6 col-lg-3 mb-4"><div class="card dashboard-card h-100"><div class="metric-label">DENIED</div><div class="metric-value">${fNum(metrics.claimsByStatus['DENY'] || 0)}</div></div></div>
+            `;
+            populateDownloadButtons(claims);
+        }
+
+        function populateCategoryFilter(claims) {
+            const filter = document.getElementById('categoryFilter');
+            const categories = [...new Set(claims.filter(c => c.isActionable).map(c => c.category))];
+            filter.innerHTML = '<option value="all" selected>All Actionable Categories</option>';
+            categories.sort().forEach(cat => filter.add(new Option(cat, cat)));
+        }
+
+        function renderWorkQueue(claims) {
+            const selectedCategory = document.getElementById('categoryFilter').value;
+            let actionable = claims.filter(c => c.isActionable && (selectedCategory === 'all' || c.category === selectedCategory));
+            actionable.sort((a, b) => (b[currentSort.column] || 0) - (a[currentSort.column] || 0) * (currentSort.direction === 'asc' ? 1 : -1));
+            document.getElementById('work-queue-body').innerHTML = actionable.map(claim =>
+                `<tr>
+                    <td>${claim.priorityScore}</td> <td>${claim.category || 'N/A'}</td> <td>${claim.source || 'N/A'}</td> <td>${claim.teamName || 'N/A'}</td>
+                    <td></td> <td>${claim.w9Attached || ''}</td> <td>${claim.tinHasW9InPV || 'N/A'}</td> <td>${claim.pvApproved || ''}</td>
+                    <td>${claim.pvSource || ''}</td> <td></td> <td></td> <td>${claim.claimId || 'N/A'}</td> <td>${claim.age || 0}</td>
+                    <td>$${(claim.netPayment || 0).toFixed(2)}</td> <td>${claim.providerName || 'N/A'}</td>
+                </tr>`
+            ).join('');
+        }
+
+        function populateDownloadButtons(claims) {
+            const teamContainer = document.getElementById('teamReportButtons');
+            const specialtyContainer = document.getElementById('specialtyReportButtons');
+            const actionableClaims = claims.filter(c => c.isActionable);
+            const teams = [...new Set(actionableClaims.map(c => c.teamName).filter(Boolean))];
+            teamContainer.innerHTML = teams.length === 0 ? '<p class="text-muted">No actionable claims found for any team.</p>' : '';
+            teams.sort().forEach(teamName => {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-success';
+                btn.innerHTML = `<i class="bi bi-download"></i> Download ${teamName} Report`;
+                btn.onclick = () => downloadTeamReport(teamName, actionableClaims);
+                teamContainer.appendChild(btn);
+            });
+            specialtyContainer.innerHTML = '';
+            const l1MonitorClaims = actionableClaims.filter(c => c.send_to_l1_monitor);
+            if(l1MonitorClaims.length > 0) {
+                const btn = document.createElement('button');
+                btn.className = 'btn btn-info';
+                btn.innerHTML = `<i class="bi bi-clipboard-data"></i> Download L1 Monitor Report (${l1MonitorClaims.length} items)`;
+                btn.onclick = () => downloadL1MonitorReport(l1MonitorClaims);
+                specialtyContainer.appendChild(btn);
+            }
+        }
+
         function downloadTeamReport(teamName, allActionableClaims) {
             const teamClaims = allActionableClaims.filter(c => c.teamName === teamName);
-            if (teamClaims.length === 0) {
-                alert(`No claims found for team: ${teamName}`);
-                return;
-            }
-            const claimsByCategory = teamClaims.reduce((acc, claim) => {
-                (acc[claim.category] = acc[claim.category] || []).push(claim);
-                return acc;
-            }, {});
-
+            if (teamClaims.length === 0) return alert(`No claims for team: ${teamName}`);
+            const claimsByCategory = teamClaims.reduce((acc, claim) => { (acc[claim.category] = acc[claim.category] || []).push(claim); return acc; }, {});
             const wb = XLSX.utils.book_new();
             const today = new Date().toISOString().slice(0, 10);
-
             Object.keys(claimsByCategory).sort().forEach(categoryName => {
                 const claimsInCat = claimsByCategory[categoryName];
                 const category = claimsInCat.length > 0 ? allCategories.find(c => c.category_name === categoryName && c.team_name === teamName) : null;
                 const customReportConfig = category ? teamReportConfigs.find(rc => rc.team_id === category.team_id && rc.category_id === category.id) : null;
-                
                 let reportData;
                 if (customReportConfig) {
                     const { groupBy } = customReportConfig.report_config_data;
@@ -344,9 +422,7 @@
                         const groupByKey = groupBy.map(field => getVal(claim.original, field.key) || 'N/A').join('|');
                         if (!aggregatedData.has(groupByKey)) {
                             const initialRow = {};
-                            groupBy.forEach(field => {
-                                initialRow[field.displayName] = getVal(claim.original, field.key) || 'N/A';
-                            });
+                            groupBy.forEach(field => { initialRow[field.displayName] = getVal(claim.original, field.key) || 'N/A'; });
                             initialRow['Number of Claims'] = 0;
                             aggregatedData.set(groupByKey, initialRow);
                         }
@@ -354,28 +430,50 @@
                     });
                     reportData = Array.from(aggregatedData.values());
                     reportData.sort((a, b) => b['Number of Claims'] - a['Number of Claims']);
-                    reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
                 } else {
-                    // Fallback to original hard-coded logic
-                    const baseMapping = (claim) => ({...claim.original, 'Priority Score': claim.priorityScore, 'Category': claim.category, 'Source': claim.source});
-                    reportData = claimsInCat.map(baseMapping);
+                    reportData = claimsInCat.map(claim => ({ ...claim.original, 'Priority Score': claim.priorityScore, 'Category': claim.category, 'Source': claim.source }));
                 }
-                
+                reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
                 const ws = XLSX.utils.json_to_sheet(reportData);
                 const safeSheetName = categoryName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
                 XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
             });
-
             const clientName = document.getElementById('clientName').value.trim().replace(/ /g, '_') || 'Client';
             const safeTeamName = teamName.replace(/ /g, '_');
-            const fileName = `${clientName}_${safeTeamName}_Report_${today}.xlsx`;
-            XLSX.writeFile(wb, fileName);
+            XLSX.writeFile(wb, `${clientName}_${safeTeamName}_Report_${today}.xlsx`);
         }
 
+        function downloadL1MonitorReport(l1Claims) {
+            const today = new Date().toISOString().slice(0, 10);
+            const clientName = document.getElementById('clientName').value.trim().replace(/ /g, '_') || 'Client';
+            const reportData = l1Claims.map(claim => ({
+                'Claim ID': claim.claimId, 'Category': claim.category, 'Assigned Team': claim.teamName, 'Age (Days)': claim.age,
+                'Amount at Risk': claim.netPayment, 'Billing Provider Name': claim.providerName,
+                'Billing Provider Tax ID': getVal(claim.original, 'billingProviderTaxId'),
+                'TIN Has W9 in PV': claim.tinHasW9InPV, 'Claim-Specific W9 Attached': claim.w9Attached, 'Claim-Specific PV Notes': claim.pvSource
+            }));
+            const ws = XLSX.utils.json_to_sheet(reportData);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'L1 Monitor Items');
+            XLSX.writeFile(wb, `${clientName}_L1_Monitor_Report_${today}.xlsx`);
+        }
+        
         // --- EVENT LISTENERS ---
         document.addEventListener('DOMContentLoaded', loadInitialData);
         document.getElementById('reportFile').addEventListener('change', (e) => handleFile(e, false));
-        // ... all other event listeners
+        document.getElementById('providerReportFile').addEventListener('change', handleProviderFile);
+        document.getElementById('generatePdfBtn').addEventListener('click', () => alert('PDF generation is a complex feature and is stubbed out for this example.'));
+        document.getElementById('work-queue-table').querySelector('thead').addEventListener('click', (e) => {
+            const header = e.target.closest('th');
+            if (header?.dataset.sort) {
+                const sortKey = header.dataset.sort;
+                currentSort.direction = (currentSort.column === sortKey && currentSort.direction === 'desc') ? 'asc' : 'desc';
+                currentSort.column = sortKey;
+                renderWorkQueue(allClaimsData);
+            }
+        });
+        document.getElementById('categoryFilter').addEventListener('change', () => renderWorkQueue(allClaimsData));
+
     </script>
 </body>
 </html>
