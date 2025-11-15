@@ -43,7 +43,18 @@
                                     <div class="mb-3"><label for="clientName" class="form-label">Client Name (for PDF Reports)</label><input type="text" class="form-control" id="clientName"></div>
                                     <hr>
                                     <h5>Step 2: Upload to Map Columns</h5>
-                                     <div class="mb-3"><label for="reportUploader" class="form-label">Upload XLSX File</label><input class="form-control" type="file" id="reportUploader" accept=".xlsx"></div>
+                                    <div class="d-flex align-items-end">
+                                        <div class="flex-grow-1">
+                                            <label for="reportUploader" class="form-label">Upload XLSX File</label>
+                                            <input class="form-control" type="file" id="reportUploader" accept=".xlsx">
+                                        </div>
+                                        <div class="ms-3 text-center">
+                                            <span class="text-muted d-block mb-1 small">OR</span>
+                                            <button type="button" class="btn btn-sm btn-outline-secondary" data-bs-toggle="modal" data-bs-target="#copyMappingModal">
+                                                <i class="bi bi-clipboard-plus"></i> Copy from...
+                                            </button>
+                                        </div>
+                                    </div>
                                     <div id="mappingSection" class="mt-4" style="display: none;">
                                         <h6 id="mappingHeader">Map Your Fields to Detected Headers:</h6>
                                         <div id="mapping-alert" class="alert alert-info d-none"></div>
@@ -208,11 +219,21 @@
                                         <h5>Manage Existing Rules</h5>
                                         <p class="mb-0">Re-assign a rule to a different category or delete it permanently.</p>
                                     </div>
-                                    <div class="w-25">
-                                        <label for="clientRuleFilter" class="form-label">Filter by Client</label>
-                                        <select class="form-select form-select-sm" id="clientRuleFilter">
-                                            <option value="">Select a Client...</option>
-                                        </select>
+                                    <div class="d-flex align-items-end">
+                                        <div class="me-3">
+                                            <label for="clientRuleFilter" class="form-label">Filter by Client</label>
+                                            <select class="form-select form-select-sm" id="clientRuleFilter">
+                                                <option value="">Select a Client...</option>
+                                            </select>
+                                        </div>
+                                        <div class="btn-group">
+                                            <button class="btn btn-sm btn-outline-primary" id="downloadRulesBtn" disabled>
+                                                <i class="bi bi-download"></i> Download Rules
+                                            </button>
+                                            <button class="btn btn-sm btn-outline-secondary" id="copyRulesBtn" disabled data-bs-toggle="modal" data-bs-target="#copyRulesModal">
+                                                <i class="bi bi-clipboard-plus"></i> Copy From...
+                                            </button>
+                                        </div>
                                     </div>
                                 </div>
                                 
@@ -240,6 +261,63 @@
                             </div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Copying Mappings -->
+    <div class="modal fade" id="copyMappingModal" tabindex="-1" aria-labelledby="copyMappingModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="copyMappingModalLabel">Copy Mappings From Existing Configuration</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Select a configuration to copy its column mappings into the current form. This will replace any existing mappings in the form.</p>
+                    <div class="mb-3">
+                        <label for="copySourceConfig" class="form-label">Source Configuration</label>
+                        <select id="copySourceConfig" class="form-select"></select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmCopyBtn">Copy Mappings</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for Copying Client Rules -->
+    <div class="modal fade" id="copyRulesModal" tabindex="-1" aria-labelledby="copyRulesModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="copyRulesModalLabel">Copy Rules From Another Client</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="small text-muted">This will copy rules from the source client that do not already exist in the current client. It will not overwrite or delete existing rules.</p>
+                    <div class="mb-3">
+                        <label for="copyRulesSourceConfig" class="form-label fw-bold">1. Select Source Client</label>
+                        <select id="copyRulesSourceConfig" class="form-select"></select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-bold">2. Select Rule Types to Copy</label>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="" id="copyEditsCheckbox" checked>
+                            <label class="form-check-label" for="copyEditsCheckbox">Claim Edit Rules</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" value="" id="copyNotesCheckbox" checked>
+                            <label class="form-check-label" for="copyNotesCheckbox">Claim Note Rules</label>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="confirmCopyRulesBtn">Confirm Copy</button>
                 </div>
             </div>
         </div>
@@ -309,19 +387,20 @@ document.addEventListener('DOMContentLoaded', () => {
     const customWidgetForm = document.getElementById('customWidgetForm'), customWidgetModalEl = document.getElementById('customWidgetModal'), customWidgetModal = new bootstrap.Modal(customWidgetModalEl), saveWidgetBtn = document.getElementById('saveWidgetBtn'), metricTypeSelect = document.getElementById('metricType'), metricColumnContainer = document.getElementById('metricColumnContainer');
     const clientTeamConfigSelector = document.getElementById('clientTeamConfigSelector'), clientTeamChecklist = document.getElementById('clientTeamChecklist'), saveClientTeamAssocsBtn = document.getElementById('saveClientTeamAssocsBtn');
     const clientRuleFilter = document.getElementById('clientRuleFilter');
-
-    // W9 Triage DOM Elements (now integrated)
     const w9TriageSection = document.getElementById('w9TriageSection'), triageMrw9Uploader = document.getElementById('triageMrw9Uploader'), triageResultsContainer = document.getElementById('triageResultsContainer'), triagePlaceholder = document.getElementById('triagePlaceholder'), triageTableBody = document.getElementById('triageTableBody'), generateAssignmentReportsBtn = document.getElementById('generateAssignmentReportsBtn'), triageSummary = document.getElementById('triageSummary');
+
+    // --- NEW FEATURE DOM ELEMENTS ---
+    const copyMappingModalEl = document.getElementById('copyMappingModal'), copyMappingModal = new bootstrap.Modal(copyMappingModalEl), copySourceConfigSelect = document.getElementById('copySourceConfig'), confirmCopyBtn = document.getElementById('confirmCopyBtn');
+    const downloadRulesBtn = document.getElementById('downloadRulesBtn');
+    const copyRulesBtn = document.getElementById('copyRulesBtn');
+    const copyRulesModalEl = document.getElementById('copyRulesModal'), copyRulesModal = new bootstrap.Modal(copyRulesModalEl), copyRulesSourceConfigSelect = document.getElementById('copyRulesSourceConfig'), confirmCopyRulesBtn = document.getElementById('confirmCopyRulesBtn'), copyEditsCheckbox = document.getElementById('copyEditsCheckbox'), copyNotesCheckbox = document.getElementById('copyNotesCheckbox');
 
     // Global State
     let allTeams = [], allCategories = [], allClientConfigs = [], allClientTeamAssociations = [], detectedHeaders = [], columnMappingsForCategorization = {}, mappingsForEditing = {}, currentCustomWidgets = [];
     let activeEditRules = [], activeNoteRules = [];
     let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
-    
-    // Triage State
     let mainReportFullData = [], triageClaimsData = [];
     
-    // THE FIX: Disable dropdowns that depend on initial data load
     clientRuleFilter.disabled = true;
     categorizationConfigSelector.disabled = true;
     clientTeamConfigSelector.disabled = true;
@@ -342,10 +421,12 @@ document.addEventListener('DOMContentLoaded', () => {
             window.allClientConfigs = allClientConfigs;
             configList.innerHTML = allClientConfigs.length ? '' : '<li class="list-group-item">No configurations found.</li>';
             
-            const selectors = [categorizationConfigSelector, clientTeamConfigSelector, clientRuleFilter];
+            const selectors = [categorizationConfigSelector, clientTeamConfigSelector, clientRuleFilter, copySourceConfigSelect, copyRulesSourceConfigSelect];
             selectors.forEach(sel => {
+                const currentVal = sel.value;
                 sel.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
                 allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id)));
+                if(currentVal) sel.value = currentVal;
             });
 
             allClientConfigs.forEach(config => {
@@ -357,20 +438,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 nameLink.dataset.configId = config.id;
                 nameLink.textContent = config.config_name;
                 li.appendChild(nameLink);
-                const btnGroup = document.createElement('div');
-                btnGroup.className = 'btn-group';
-                btnGroup.role = 'group';
-                const downloadBtn = document.createElement('button');
-                downloadBtn.className = 'btn btn-outline-secondary btn-sm';
-                downloadBtn.textContent = 'Download';
-                downloadBtn.onclick = () => downloadConfigAsXLSX(config);
-                btnGroup.appendChild(downloadBtn);
                 const deleteBtn = document.createElement('button');
                 deleteBtn.className = 'btn btn-danger btn-sm';
                 deleteBtn.textContent = 'Delete';
                 deleteBtn.onclick = () => deleteConfig(config.id);
-                btnGroup.appendChild(deleteBtn);
-                li.appendChild(btnGroup);
+                li.appendChild(deleteBtn);
                 configList.appendChild(li);
             });
         } catch (error) { console.error('Error loading configurations:', error); }
@@ -384,15 +456,12 @@ document.addEventListener('DOMContentLoaded', () => {
             activeNoteRules = [];
             return;
         }
-        console.log(`Fetching rules for config_id: ${configId}`);
         const [editRes, noteRes] = await Promise.all([
             fetch(`${RULES_API}?type=edit&config_id=${configId}`),
             fetch(`${RULES_API}?type=note&config_id=${configId}`)
         ]);
         if (editRes.ok) activeEditRules = await editRes.json();
         if (noteRes.ok) activeNoteRules = await noteRes.json();
-        console.log('Fetched Edit Rules:', activeEditRules);
-        console.log('Fetched Note Rules:', activeNoteRules);
     }
     async function loadClientTeamAssociations() { const response = await fetch(CLIENT_TEAM_API); if(response.ok) allClientTeamAssociations = await response.json(); }
     
@@ -402,20 +471,87 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTeamList();
             populateTeamDropdown();
             renderCategoryList();
-            
-            // THE FIX: Re-enable the dropdowns now that all data is loaded
             clientRuleFilter.disabled = false;
             categorizationConfigSelector.disabled = false;
             clientTeamConfigSelector.disabled = false;
-
         } catch (error) { console.error("Failed to load initial admin data:", error); alert("Error loading administrative data. Please check the console and refresh the page."); }
     }
 
     // --- CLIENT CONFIGURATION LOGIC ---
-    function editConfig(configId) { const config = (allClientConfigs || []).find(c => c.id === configId); if (!config) return; clearConfigForm(); configIdInput.value = config.id; configNameInput.value = config.config_name; clientNameInput.value = config.config_data.clientName || ''; mappingsForEditing = config.config_data.columnMappings || {}; currentCustomWidgets = config.config_data.pdfConfig?.customWidgets || []; mappingSection.style.display = 'block'; mappingTableBody.innerHTML = ''; mappingAlert.textContent = 'Upload a file to view or change the column mappings for this configuration.'; mappingAlert.classList.remove('d-none'); mappingHeader.innerHTML = 'Map Your Fields to Detected Headers:'; populateAvailableWidgets(); renderPdfLayout(config.config_data.pdfConfig); }
-    function renderMappingUI() { mappingHeader.innerHTML = `Map Your Fields to Detected Headers: <span class="badge bg-secondary">${detectedHeaders.length} columns found</span>`; mappingAlert.classList.add('d-none'); mappingTableBody.innerHTML = ''; standardFields.forEach(field => { const row = mappingTableBody.insertRow(); row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`; const cell2 = row.insertCell(); const select = document.createElement('select'); select.className = 'form-select form-select-sm'; select.dataset.standardKey = field.key; select.add(new Option(field.required ? 'Select header...' : 'Optional', '')); let bestGuess = ''; const savedMapping = mappingsForEditing[field.key]; if (savedMapping && detectedHeaders.includes(savedMapping)) { bestGuess = savedMapping; } else if (detectedHeaders.includes(field.displayName)) { bestGuess = field.displayName; } else if (detectedHeaders.includes(field.key)) { bestGuess = field.key; } detectedHeaders.forEach(header => { const option = new Option(header, header); if (header === bestGuess) option.selected = true; select.add(option); }); cell2.appendChild(select); }); mappingSection.style.display = 'block'; }
-    async function deleteConfig(id) { if (!confirm('Are you sure you want to delete this configuration? This cannot be undone.')) return; try { await fetch(`${CONFIG_API}?id=${id}`, { method: 'DELETE' }); alert('Configuration deleted successfully.'); loadAllData(); } catch (error) { alert('Failed to delete configuration.'); } }
-    function downloadConfigAsXLSX(config) { const wb = XLSX.utils.book_new(); const summaryData = [ { Key: 'Configuration Name', Value: config.config_name }, { Key: 'Client Name (for PDF)', Value: config.config_data.clientName || 'Not Set' } ]; const wsSummary = XLSX.utils.json_to_sheet(summaryData, { skipHeader: true }); XLSX.utils.book_append_sheet(wb, wsSummary, 'Summary'); const mappingData = standardFields.map(field => ({ 'Standard Field': field.displayName, 'Required': field.required ? 'Yes' : 'No', 'Mapped Client Header': config.config_data.columnMappings[field.key] || '--- NOT MAPPED ---' })); const wsMappings = XLSX.utils.json_to_sheet(mappingData); XLSX.utils.book_append_sheet(wb, wsMappings, 'Column Mappings'); wsSummary['!cols'] = [{ wch: 25 }, { wch: 50 }]; wsMappings['!cols'] = [{ wch: 25 }, { wch: 10 }, { wch: 50 }]; const fileName = `Config_${config.config_name.replace(/ /g, '_')}.xlsx`; XLSX.writeFile(wb, fileName); }
+    function editConfig(configId) { 
+        const config = (allClientConfigs || []).find(c => c.id === configId); 
+        if (!config) return; 
+        clearConfigForm(); 
+        configIdInput.value = config.id; 
+        configNameInput.value = config.config_name; 
+        clientNameInput.value = config.config_data.clientName || ''; 
+        mappingsForEditing = { ...(config.config_data.columnMappings || {}) }; 
+        currentCustomWidgets = config.config_data.pdfConfig?.customWidgets || []; 
+        renderMappingsFromObject(mappingsForEditing);
+        populateAvailableWidgets(); 
+        renderPdfLayout(config.config_data.pdfConfig); 
+    }
+
+    function renderMappingUI() { 
+        mappingHeader.innerHTML = `Map Your Fields to Detected Headers: <span class="badge bg-secondary">${detectedHeaders.length} columns found</span>`; 
+        mappingAlert.classList.add('d-none'); 
+        mappingTableBody.innerHTML = ''; 
+        standardFields.forEach(field => { 
+            const row = mappingTableBody.insertRow(); 
+            row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`; 
+            const cell2 = row.insertCell(); 
+            const select = document.createElement('select'); 
+            select.className = 'form-select form-select-sm'; 
+            select.dataset.standardKey = field.key; 
+            select.add(new Option(field.required ? 'Select header...' : 'Optional', '')); 
+            
+            const savedMapping = mappingsForEditing[field.key];
+            let bestGuess = savedMapping && detectedHeaders.includes(savedMapping) ? savedMapping : '';
+            
+            detectedHeaders.forEach(header => { 
+                const option = new Option(header, header); 
+                if (header === bestGuess) option.selected = true; 
+                select.add(option); 
+            }); 
+            cell2.appendChild(select); 
+        }); 
+        mappingSection.style.display = 'block'; 
+    }
+    
+    function renderMappingsFromObject(mappings) {
+        mappingHeader.innerHTML = 'Current Column Mappings';
+        mappingAlert.classList.remove('d-none');
+        mappingAlert.textContent = 'Upload a file to create new mappings, or copy from another configuration.';
+        mappingTableBody.innerHTML = '';
+        const allPossibleHeaders = [...new Set(Object.values(mappings))];
+
+        standardFields.forEach(field => {
+            const row = mappingTableBody.insertRow();
+            row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`;
+            const cell2 = row.insertCell();
+            const select = document.createElement('select');
+            select.className = 'form-select form-select-sm';
+            select.dataset.standardKey = field.key;
+            select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
+            const savedValue = mappings[field.key];
+            allPossibleHeaders.forEach(header => {
+                const option = new Option(header, header);
+                if(header === savedValue) option.selected = true;
+                select.add(option);
+            });
+            cell2.appendChild(select);
+        });
+        mappingSection.style.display = 'block';
+    }
+
+    async function deleteConfig(id) { 
+        if (!confirm('Are you sure you want to delete this configuration? This cannot be undone.')) return; 
+        try { 
+            await fetch(`${CONFIG_API}?id=${id}`, { method: 'DELETE' }); 
+            alert('Configuration deleted successfully.'); 
+            loadAllData(); 
+        } catch (error) { alert('Failed to delete configuration.'); } 
+    }
     
     // --- TEAM & CATEGORY LOGIC ---
     function renderTeamList() { teamList.innerHTML = allTeams.length ? '' : '<li class="list-group-item">No teams defined.</li>'; allTeams.forEach(team => { const li = document.createElement('li'); li.className = 'list-group-item py-1 d-flex justify-content-between align-items-center'; li.textContent = team.team_name; const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 btn-delete-rule'; deleteBtn.innerHTML = '&times;'; deleteBtn.onclick = () => deleteTeam(team.id); li.appendChild(deleteBtn); teamList.appendChild(li); }); }
@@ -525,7 +661,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     function clearConfigForm() { configForm.reset(); configIdInput.value = ''; mappingSection.style.display = 'none'; mappingAlert.classList.add('d-none'); mappingsForEditing = {}; reportUploader.value = ''; currentCustomWidgets = []; populateAvailableWidgets(); renderPdfLayout({}); }
 
-    // --- GENERIC FILE READER UTILITY ---
     function readFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]); resolve(jsonData); } catch (err) { reject(err); } }; reader.onerror = (err) => reject(err); reader.readAsArrayBuffer(file); }); }
     
     // --- W9 TRIAGE LOGIC (INTEGRATED) ---
@@ -580,19 +715,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 const tin = row[taxIdKey]?.toString().trim();
                 const w9Status = (row[w9AttachedKey] || '').toString().trim().toUpperCase();
                 
-                if (claimId) {
-                    mrw9ClaimMap.set(claimId, row);
-                }
-                if (tin && w9Status === 'YES') {
-                    tinStatusMap.set(tin, 'YES');
-                }
+                if (claimId) mrw9ClaimMap.set(claimId, row);
+                if (tin && w9Status === 'YES') tinStatusMap.set(tin, 'YES');
             });
 
             const filteredClaims = mainReportFullData.filter(mainClaim => {
                 const claimId = getAdminVal(mainClaim, 'claimId')?.toString().trim();
-                if (!claimId || !mrw9ClaimMap.has(claimId)) {
-                    return false;
-                }
+                if (!claimId || !mrw9ClaimMap.has(claimId)) return false;
+                
                 const status = (getAdminVal(mainClaim, 'status') || '').toUpperCase();
                 const categoryInfo = getTriageClaimCategory(mainClaim);
                 const teamName = categoryInfo.teamName;
@@ -611,7 +741,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     original: claim
                 };
             });
-
             renderTriageTable();
         } catch (error) {
             alert(`Error processing MRW9 file: ${error.message}`);
@@ -656,11 +785,8 @@ document.addEventListener('DOMContentLoaded', () => {
         triageTableBody.querySelectorAll('select').forEach(select => {
             const index = parseInt(select.dataset.index, 10);
             const claimData = triageClaimsData[index];
-            if (select.value === 'prov_ops') {
-                providerOpsClaims.push(claimData.original);
-            } else {
-                l1MonitorClaims.push(claimData.original);
-            }
+            if (select.value === 'prov_ops') providerOpsClaims.push(claimData.original);
+            else l1MonitorClaims.push(claimData.original);
         });
 
         let generatedCount = 0;
@@ -680,84 +806,23 @@ document.addEventListener('DOMContentLoaded', () => {
             generatedCount++;
         }
         
-        if (generatedCount === 0) {
-             alert("No claims were available to generate reports.");
-        } else {
-             alert("Assignment reports generated successfully.");
-        }
+        if (generatedCount === 0) alert("No claims were available to generate reports.");
+        else alert("Assignment reports generated successfully.");
     }
 
     // --- EVENT LISTENERS ---
     configList.addEventListener('click', (e) => { if (e.target.classList.contains('config-name')) { e.preventDefault(); const configId = parseInt(e.target.dataset.configId, 10); editConfig(configId); } });
     configForm.addEventListener('submit', async (e) => { e.preventDefault(); const columnMappings = {}; mappingTableBody.querySelectorAll('select').forEach(sel => { if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value; }); const id = configIdInput.value; const pdfConfig = serializePdfLayout(); const config_data = { clientName: clientNameInput.value, columnMappings, pdfConfig }; const method = id ? 'PUT' : 'POST'; const url = id ? `${CONFIG_API}?id=${id}` : CONFIG_API; try { const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_name: configNameInput.value, config_data }) }); if(!res.ok) throw new Error(`Server responded with ${res.status}`); alert(`Configuration ${id ? 'updated' : 'created'} successfully!`); clearConfigForm(); await loadAllData(); } catch (error) { console.error('Failed to save config:', error); alert(`Failed to save configuration: ${error.message}`); } });
-    reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, { type: 'array' }); const sheet = workbook.Sheets[workbook.SheetNames[0]]; if (!sheet) throw new Error("Sheet not found."); const json = XLSX.utils.sheet_to_json(sheet, { header: 1 }); detectedHeaders = (json[0] || []).filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file. Please ensure the first row contains the column names."); return; } renderMappingUI(); } catch (err) { alert(`Error processing file: ${err.message}`); console.error(err); } }; reader.readAsArrayBuffer(file); });
+    reportUploader.addEventListener('change', (event) => { const file = event.target.files[0]; if (!file) return; readFile(file).then(data => { const headers = Object.keys(data[0] || {}); detectedHeaders = headers.filter(h => h != null && h.toString().trim() !== ''); if (detectedHeaders.length === 0) { alert("Could not detect any column headers in the uploaded file."); return; } mappingsForEditing = {}; // Clear old mappings for a new file renderMappingUI(); }).catch(err => alert(`Error processing file: ${err.message}`)); });
     clearBtn.addEventListener('click', clearConfigForm);
     
-    newTeamForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const name = newTeamNameInput.value.trim();
-        if (!name) return;
-        try {
-            const response = await fetch(TEAMS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) });
-            if (!response.ok) throw new Error('Failed to add team. It may already exist.');
-            
-            const newTeam = await response.json();
-            allTeams.push(newTeam);
-            
-            renderTeamList();
-            populateTeamDropdown();
-            
-            newTeamNameInput.value = '';
-        } catch (error) {
-            alert(error.message);
-        }
-    });
-
-    newCategoryForm.addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const category_name = newCategoryNameInput.value.trim();
-        const team_id = parseInt(teamCategorySelect.value, 10);
-        const send_to_l1_monitor = l1MonitorCheckbox.checked;
-        if (!category_name || !team_id) return alert('Please select a team and enter a category name.');
-        try {
-            const response = await fetch(CATEGORIES_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) });
-            if (!response.ok) throw new Error('Failed to add category. It may already exist.');
-
-            const newCategory = await response.json();
-            
-            const team = allTeams.find(t => t.id === newCategory.team_id);
-            if (team) {
-                newCategory.team_name = team.team_name;
-            }
-            
-            allCategories.push(newCategory);
-            
-            renderCategoryList();
-            renderExistingRulesTables(activeEditRules, activeNoteRules); // THE FIX: Re-render rule tables to include the new option
-            
-            newCategoryNameInput.value = '';
-            l1MonitorCheckbox.checked = false;
-
-        } catch (error) {
-            alert(error.message);
-        }
-    });
+    newTeamForm.addEventListener('submit', async (e) => { e.preventDefault(); const name = newTeamNameInput.value.trim(); if (!name) return; try { const response = await fetch(TEAMS_API, { method: 'POST', body: JSON.stringify({ team_name: name }) }); if (!response.ok) throw new Error('Failed to add team.'); newTeamNameInput.value = ''; await loadAllData(); } catch (error) { alert(error.message); } });
+    newCategoryForm.addEventListener('submit', async (e) => { e.preventDefault(); const category_name = newCategoryNameInput.value.trim(); const team_id = parseInt(teamCategorySelect.value, 10); const send_to_l1_monitor = l1MonitorCheckbox.checked; if (!category_name || !team_id) return alert('Please select a team and enter a category name.'); try { const response = await fetch(CATEGORIES_API, { method: 'POST', body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) }); if (!response.ok) throw new Error('Failed to add category.'); newCategoryNameInput.value = ''; l1MonitorCheckbox.checked = false; await loadAllData(); } catch (error) { alert(error.message); } });
 
     categorizationConfigSelector.addEventListener('change', async () => { 
         const selectedId = parseInt(categorizationConfigSelector.value, 10); 
-        if (!selectedId) {
-            categorizationReportUploader.disabled = true;
-            return;
-        }
-        
-        try {
-            await loadRulesForConfig(selectedId);
-        } catch (error) {
-            alert('Failed to load rules for this configuration.');
-            console.error(error);
-            return;
-        }
-
+        if (!selectedId) { categorizationReportUploader.disabled = true; return; }
+        await loadRulesForConfig(selectedId);
         const config = (allClientConfigs || []).find(c => c.id === selectedId); 
         if (config?.config_data?.columnMappings) { 
             columnMappingsForCategorization = config.config_data.columnMappings; 
@@ -765,93 +830,168 @@ document.addEventListener('DOMContentLoaded', () => {
             categorizationReportUploader.disabled = !hasRequiredCols; 
             if(!hasRequiredCols) alert('Selected config must map both "Claim Edits" and "Claim Notes" to discover new rules.');
             
-            const getRuleDetails = (rule) => {
-                const cat = allCategories.find(c => c.id === rule.category_id);
-                return cat ? { ...rule, team_name: cat.team_name, category_name: cat.category_name } : null;
-            };
+            const getRuleDetails = (rule) => { const cat = allCategories.find(c => c.id === rule.category_id); return cat ? { ...rule, team_name: cat.team_name, category_name: cat.category_name } : null; };
+            configSpecificRules.editRulesMap = new Map(activeEditRules.map(getRuleDetails).filter(Boolean).map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
+            configSpecificRules.noteRulesMap = new Map(activeNoteRules.map(getRuleDetails).filter(Boolean).map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
 
-            const detailedEditRules = activeEditRules.map(getRuleDetails).filter(Boolean);
-            const detailedNoteRules = activeNoteRules.map(getRuleDetails).filter(Boolean);
-
-            configSpecificRules.editRulesMap = new Map(detailedEditRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
-            configSpecificRules.noteRulesMap = new Map(detailedNoteRules.map(r => [r.text, { category: r.category_name, teamName: r.team_name }]));
-
-            w9TriageSection.style.display = 'none';
-            triageMrw9Uploader.value = '';
-            triageResultsContainer.classList.add('d-none');
-            triageTableBody.innerHTML = '';
+            w9TriageSection.style.display = 'none'; triageMrw9Uploader.value = ''; triageResultsContainer.classList.add('d-none'); triageTableBody.innerHTML = '';
         } 
     });
 
     categorizationReportUploader.addEventListener('change', async (event) => { 
-        const file = event.target.files[0]; 
-        if (!file) return; 
+        const file = event.target.files[0]; if (!file) return; 
         try {
-            const dataJson = await readFile(file);
-            mainReportFullData = dataJson;
-            
-            processUploadedReport(dataJson);
-
-            alert(`Loaded ${mainReportFullData.length} claims from the main report. You can now proceed with W9 Triage.`);
-            w9TriageSection.style.display = 'block';
-            triagePlaceholder.style.display = 'block';
-            triageResultsContainer.classList.add('d-none');
-            triageMrw9Uploader.value = '';
-            
-        } catch(error) {
-            alert(`Error processing main report: ${error.message}`);
-        }
+            mainReportFullData = await readFile(file);
+            processUploadedReport(mainReportFullData);
+            w9TriageSection.style.display = 'block'; triagePlaceholder.style.display = 'block'; triageResultsContainer.classList.add('d-none'); triageMrw9Uploader.value = '';
+        } catch(error) { alert(`Error processing main report: ${error.message}`); }
     });
 
     document.querySelectorAll('.save-rules-btn').forEach(btn => btn.addEventListener('click', saveNewRules));
     saveExistingChangesBtn.addEventListener('click', saveExistingRuleChanges);
     document.getElementById('manage-pane').addEventListener('click', (e) => { if (e.target.classList.contains('btn-delete-rule')) { const type = e.target.dataset.type; const text = decodeURIComponent(e.target.dataset.text); deleteRule(type, text); } });
     
-    // Client-Team Association Listeners
     clientTeamConfigSelector.addEventListener('change', async (e) => {
-        const configId = e.target.value;
-        if (!configId) { clientTeamChecklist.innerHTML = '<small class="text-muted">Select a client to see teams.</small>'; return; }
-        
-        const response = await fetch(`${CLIENT_TEAM_API}?config_id=${configId}`);
-        const associatedTeamIds = await response.json();
-        const teamIdSet = new Set(associatedTeamIds);
-
+        const configId = e.target.value; if (!configId) { clientTeamChecklist.innerHTML = '<small class="text-muted">Select a client to see teams.</small>'; return; }
+        const response = await fetch(`${CLIENT_TEAM_API}?config_id=${configId}`); const associatedTeamIds = await response.json(); const teamIdSet = new Set(associatedTeamIds);
         clientTeamChecklist.innerHTML = '';
         allTeams.sort((a,b) => a.team_name.localeCompare(b.team_name)).forEach(team => {
             const div = document.createElement('div');
             div.className = 'form-check';
-            div.innerHTML = `<input class="form-check-input" type="checkbox" value="${team.id}" id="team_check_${team.id}" ${teamIdSet.has(team.id) ? 'checked' : ''}>
-                             <label class="form-check-label" for="team_check_${team.id}">${team.team_name}</label>`;
+            div.innerHTML = `<input class="form-check-input" type="checkbox" value="${team.id}" id="team_check_${team.id}" ${teamIdSet.has(team.id) ? 'checked' : ''}><label class="form-check-label" for="team_check_${team.id}">${team.team_name}</label>`;
             clientTeamChecklist.appendChild(div);
         });
     });
 
     saveClientTeamAssocsBtn.addEventListener('click', async () => {
-        const config_id = clientTeamConfigSelector.value;
-        if (!config_id) { alert("Please select a client first."); return; }
+        const config_id = clientTeamConfigSelector.value; if (!config_id) { alert("Please select a client first."); return; }
         const team_ids = Array.from(clientTeamChecklist.querySelectorAll('input:checked')).map(input => parseInt(input.value, 10));
         try {
-            await fetch(CLIENT_TEAM_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_id: parseInt(config_id, 10), team_ids }) });
+            await fetch(CLIENT_TEAM_API, { method: 'POST', body: JSON.stringify({ config_id: parseInt(config_id, 10), team_ids }) });
             alert("Client-Team associations saved successfully.");
-            await loadClientTeamAssociations();
-        } catch (error) {
-            alert(`Failed to save associations: ${error.message}`);
-        }
+        } catch (error) { alert(`Failed to save associations: ${error.message}`); }
     });
 
     clientRuleFilter.addEventListener('change', async (e) => {
         const configId = e.target.value;
         if (!configId) {
-            renderExistingRulesTables([], []); // Clear tables if nothing is selected
+            renderExistingRulesTables([], []);
+            downloadRulesBtn.disabled = true;
+            copyRulesBtn.disabled = true;
             return;
         }
         
         try {
             await loadRulesForConfig(configId);
             renderExistingRulesTables(activeEditRules, activeNoteRules);
+            downloadRulesBtn.disabled = false;
+            copyRulesBtn.disabled = false;
+
+            // Populate the "Copy Rules" modal dropdown, excluding the current client
+            copyRulesSourceConfigSelect.innerHTML = '<option value="" selected disabled>Select a source client...</option>';
+            allClientConfigs.filter(c => c.id != configId).forEach(c => copyRulesSourceConfigSelect.add(new Option(c.config_name, c.id)));
+
         } catch (error) {
             alert('Failed to load rules for this client.');
             console.error(error);
+        }
+    });
+
+    // --- NEW FEATURE EVENT LISTENERS ---
+    confirmCopyBtn.addEventListener('click', () => {
+        const sourceId = copySourceConfigSelect.value;
+        if (!sourceId) return alert('Please select a source configuration.');
+        const sourceConfig = allClientConfigs.find(c => c.id == sourceId);
+        if (sourceConfig && sourceConfig.config_data.columnMappings) {
+            mappingsForEditing = { ...sourceConfig.config_data.columnMappings };
+            renderMappingsFromObject(mappingsForEditing);
+            copyMappingModal.hide();
+        } else {
+            alert('The selected source configuration has no mappings to copy.');
+        }
+    });
+
+    downloadRulesBtn.addEventListener('click', () => {
+        const configId = clientRuleFilter.value;
+        const config = allClientConfigs.find(c => c.id == configId);
+        if (!config || (activeEditRules.length === 0 && activeNoteRules.length === 0)) {
+            return alert('No rules to download for the selected client.');
+        }
+
+        const getCategoryInfo = (catId) => {
+            const cat = allCategories.find(c => c.id === catId);
+            return cat ? `${cat.category_name} (${cat.team_name || 'Unassigned'})` : 'N/A';
+        };
+
+        const editData = activeEditRules.map(rule => ({
+            'Rule Text': rule.text,
+            'Assigned Category (Team)': getCategoryInfo(rule.category_id)
+        }));
+        const noteData = activeNoteRules.map(rule => ({
+            'Rule Text': rule.text,
+            'Assigned Category (Team)': getCategoryInfo(rule.category_id)
+        }));
+
+        const wb = XLSX.utils.book_new();
+        if (editData.length > 0) {
+            const wsEdit = XLSX.utils.json_to_sheet(editData);
+            wsEdit['!cols'] = [{ wch: 50 }, { wch: 50 }];
+            XLSX.utils.book_append_sheet(wb, wsEdit, 'Claim Edit Rules');
+        }
+        if (noteData.length > 0) {
+            const wsNote = XLSX.utils.json_to_sheet(noteData);
+            wsNote['!cols'] = [{ wch: 80 }, { wch: 50 }];
+            XLSX.utils.book_append_sheet(wb, wsNote, 'Claim Note Rules');
+        }
+
+        const clientName = config.config_name.replace(/ /g, '_');
+        XLSX.writeFile(wb, `${clientName}_Categorization_Rules.xlsx`);
+    });
+
+    confirmCopyRulesBtn.addEventListener('click', async () => {
+        const targetConfigId = clientRuleFilter.value;
+        const sourceConfigId = copyRulesSourceConfigSelect.value;
+
+        if(!targetConfigId || !sourceConfigId) return alert('Please select both a source and target client.');
+        if(!copyEditsCheckbox.checked && !copyNotesCheckbox.checked) return alert('Please select at least one rule type to copy.');
+
+        // 1. Fetch source rules
+        let sourceEditRules = [], sourceNoteRules = [];
+        const [editRes, noteRes] = await Promise.all([
+            fetch(`${RULES_API}?type=edit&config_id=${sourceConfigId}`),
+            fetch(`${RULES_API}?type=note&config_id=${sourceConfigId}`)
+        ]);
+        if (editRes.ok) sourceEditRules = await editRes.json();
+        if (noteRes.ok) sourceNoteRules = await noteRes.json();
+
+        // 2. Filter out rules that already exist in the target
+        const existingEditTexts = new Set(activeEditRules.map(r => r.text));
+        const existingNoteTexts = new Set(activeNoteRules.map(r => r.text));
+        
+        const newEditRules = copyEditsCheckbox.checked ? sourceEditRules.filter(r => !existingEditTexts.has(r.text)) : [];
+        const newNoteRules = copyNotesCheckbox.checked ? sourceNoteRules.filter(r => !existingNoteTexts.has(r.text)) : [];
+
+        if (newEditRules.length === 0 && newNoteRules.length === 0) {
+            alert('No new rules to copy. The target client already has all the rules from the source.');
+            return;
+        }
+
+        // 3. Save the new rules to the target
+        try {
+            await Promise.all([
+                newEditRules.length > 0 ? fetch(`${RULES_API}?type=edit&config_id=${targetConfigId}`, { method: 'POST', body: JSON.stringify(newEditRules) }) : Promise.resolve(),
+                newNoteRules.length > 0 ? fetch(`${RULES_API}?type=note&config_id=${targetConfigId}`, { method: 'POST', body: JSON.stringify(newNoteRules) }) : Promise.resolve()
+            ]);
+            
+            alert(`Successfully copied ${newEditRules.length} edit rule(s) and ${newNoteRules.length} note rule(s).`);
+            copyRulesModal.hide();
+            
+            // 4. Refresh the view
+            await loadRulesForConfig(targetConfigId);
+            renderExistingRulesTables(activeEditRules, activeNoteRules);
+
+        } catch (error) {
+            alert(`An error occurred while copying rules: ${error.message}`);
         }
     });
 
