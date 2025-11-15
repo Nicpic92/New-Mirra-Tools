@@ -159,16 +159,17 @@
         let teamReportConfigs = [];
         let clientRules = { editRules: [], noteRules: [] };
 
+        const standardFields = [
+             { key: 'claimId', displayName: 'Claim ID / Number' }, { key: 'age', displayName: 'Age (in days)' }, { key: 'netPayment', displayName: 'Net Payment Amount' }, { key: 'state', displayName: 'Claim State' }, { key: 'status', displayName: 'Claim Status' }, { key: 'networkStatus', displayName: 'Network Status' }, { key: 'providerName', displayName: 'Billing Provider Name' }, { key: 'edit', displayName: 'Claim Edits' }, { key: 'notes', displayName: 'Claim Notes' }, { key: 'totalCharges', displayName: 'Total Billed Amount' }, { key: 'dsnp', displayName: 'DSNP Status' }, { key: 'payer', displayName: 'Payer Name' }, { key: 'claimCategory', displayName: 'Category' }, { key: 'claimType', displayName: 'Claim Type' }, { key: 'receivedDate', displayName: 'Received Date' }, { key: 'billingProviderTaxId', displayName: 'Billing Provider Tax ID' }, { key: 'billingProviderNpi', displayName: 'Billing Provider NPI' }, { key: 'patientName', displayName: 'Patient Name' }, { key: 'subscriberId', displayName: 'Subscriber ID' }, { key: 'renderingProviderName', displayName: 'Rendering Provider Name' }, { key: 'renderingProviderNpi', displayName: 'Rendering Provider NPI' }, { key: 'dosFrom', displayName: 'Date of Service (From)' }, { key: 'dosTo', displayName: 'Date of Service (To)' }, { key: 'cleanAge', displayName: 'Clean Age' }, { key: 'pbpName', displayName: 'PBP Name' }, { key: 'planName', displayName: 'Plan Name' }, { key: 'activityLog', displayName: 'Activity Log Description' }, { key: 'activityUser', displayName: 'Activity Performed By' }, { key: 'activityDate', displayName: 'Activity Performed On' }
+        ];
+
         // --- SMART getVal FUNCTION ---
-        const getVal = (claim, standardKey) => {
-            const mappedKey = currentColumnMappings[standardKey];
+        const getVal = (claim, standardKey, mappings) => {
+            const effectiveMappings = mappings || currentColumnMappings;
+            const mappedKey = effectiveMappings[standardKey];
             return (mappedKey && claim[mappedKey] !== undefined) ? claim[mappedKey] : undefined;
         };
         
-        const getRawVal = (claim, rawHeader) => {
-            return claim[rawHeader];
-        };
-
         // --- DYNAMIC CATEGORIZATION LOGIC ---
         function getClaimCategory(claim) {
             const notes = (getVal(claim, 'notes') || '').toLowerCase();
@@ -183,14 +184,16 @@
             }
 
             if (notes) {
-                for (const noteRule of clientRules.noteRules) {
+                // Sort by length descending to match more specific rules first
+                const sortedNoteRules = [...clientRules.noteRules].sort((a, b) => b.text.length - a.text.length);
+                for (const noteRule of sortedNoteRules) {
                     if (notes.includes(noteRule.text)) {
                         const category = categoryMap.get(noteRule.category_id);
                         if(category) return { ...category, category: category.category_name, source: 'Note Rule' };
                     }
                 }
             }
-            return { category: 'Needs Triage', source: 'Default', teamName: 'Needs Assignment', send_to_l1_monitor: false };
+            return { category: 'Needs Triage', source: 'Default', team_name: 'Needs Assignment', send_to_l1_monitor: false };
         }
 
         // --- CONFIGURATION & DATA LOADING ---
@@ -332,7 +335,7 @@
                     processedClaim.priorityScore = getPriorityScore(processedClaim);
                 } else {
                     processedClaim.category = 'N/A';
-                    processedClaim.teamName = 'N/A';
+                    processedClaim.team_name = 'N/A';
                     processedClaim.priorityScore = -1;
                 }
                 return processedClaim;
@@ -404,7 +407,7 @@
                 specialtyContainer.appendChild(btn);
             }
         }
-
+        
         function downloadTeamReport(teamName, allActionableClaims) {
             const teamClaims = allActionableClaims.filter(c => c.team_name === teamName);
             if (teamClaims.length === 0) return alert(`No claims for team: ${teamName}`);
@@ -418,22 +421,52 @@
                 const customReportConfig = category ? teamReportConfigs.find(rc => rc.team_id === category.team_id && rc.category_id === category.id) : null;
                 
                 let reportData;
+                let isAggregated = false;
+
                 if (customReportConfig?.report_config_data?.groupBy) {
-                    const { groupBy } = customReportConfig.report_config_data;
-                    const aggregatedData = new Map();
-                    claimsInCat.forEach(claim => {
-                        const groupByKey = groupBy.map(field => getRawVal(claim.original, field.key) || 'N/A').join('|');
-                        if (!aggregatedData.has(groupByKey)) {
-                            const initialRow = {};
-                            groupBy.forEach(field => { initialRow[field.displayName] = getRawVal(claim.original, field.key) || 'N/A'; });
-                            initialRow['Number of Claims'] = 0;
-                            aggregatedData.set(groupByKey, initialRow);
-                        }
-                        aggregatedData.get(groupByKey)['Number of Claims']++;
-                    });
-                    reportData = Array.from(aggregatedData.values());
-                    reportData.sort((a, b) => b['Number of Claims'] - a['Number of Claims']);
-                } else {
+                    const { groupBy, metrics, sourceConfigId } = customReportConfig.report_config_data;
+                    const sourceConfig = allConfigs.find(c => c.id == sourceConfigId);
+                    if (!sourceConfig) {
+                        console.error(`Source config ID ${sourceConfigId} not found for report.`);
+                    } else {
+                        isAggregated = true;
+                        const reportMappings = sourceConfig.config_data.columnMappings;
+                        const standardFieldMap = new Map(standardFields.map(f => [f.key, f.displayName]));
+                        const aggregatedData = new Map();
+
+                        claimsInCat.forEach(claim => {
+                            const groupByKey = groupBy.map(stdKey => getVal(claim.original, stdKey, reportMappings) || 'N/A').join('|');
+                            
+                            if (!aggregatedData.has(groupByKey)) {
+                                const initialRow = {};
+                                groupBy.forEach(stdKey => {
+                                    const header = standardFieldMap.get(stdKey) || stdKey;
+                                    initialRow[header] = getVal(claim.original, stdKey, reportMappings) || 'N/A';
+                                });
+                                // Initialize metric collectors
+                                initialRow._metrics = { count: 0, totalAge: 0, totalCleanAge: 0 };
+                                aggregatedData.set(groupByKey, initialRow);
+                            }
+                            
+                            const group = aggregatedData.get(groupByKey);
+                            group._metrics.count++;
+                            group._metrics.totalAge += (parseInt(getVal(claim.original, 'age', reportMappings)) || 0);
+                            group._metrics.totalCleanAge += (parseInt(getVal(claim.original, 'cleanAge', reportMappings)) || 0);
+                        });
+
+                        reportData = Array.from(aggregatedData.values()).map(group => {
+                             const finalRow = { ...group };
+                             if (metrics.includes('count')) finalRow['Number of Claims'] = group._metrics.count;
+                             if (metrics.includes('avgAge')) finalRow['Average Claim Age'] = group._metrics.count > 0 ? (group._metrics.totalAge / group._metrics.count).toFixed(1) : 0;
+                             if (metrics.includes('avgCleanAge')) finalRow['Average Clean Age'] = group._metrics.count > 0 ? (group._metrics.totalCleanAge / group._metrics.count).toFixed(1) : 0;
+                             delete finalRow._metrics; // clean up helper property
+                             return finalRow;
+                        });
+                    }
+                }
+
+                if (!isAggregated) {
+                    // Fallback to original behavior
                     reportData = claimsInCat.map(claim => ({ ...claim.original, 'Priority Score': claim.priorityScore, 'Category': claim.category, 'Source': claim.source }));
                 }
 
@@ -487,4 +520,4 @@
 
     </script>
 </body>
-</html>```
+</html>
