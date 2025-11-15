@@ -19,17 +19,18 @@ exports.handler = async function(event) {
 
         switch (event.httpMethod) {
             case 'GET': {
+                // CORRECTED: Changed LEFT JOIN to INNER JOIN for efficiency.
+                // This prevents fetching rules that point to a deleted category,
+                // letting the database do the filtering work instead of the application code.
                 const sql = `
                     SELECT r.${textField} as text, r.category_id, c.category_name, t.team_name
                     FROM ${tableName} r
-                    LEFT JOIN claim_categories c ON r.category_id = c.id
+                    INNER JOIN claim_categories c ON r.category_id = c.id
                     LEFT JOIN teams t ON c.team_id = t.id
                     WHERE r.config_id = $1;
                 `;
                 const result = await pool.query(sql, [config_id]);
-                // Filter out any rules that have a dead reference to a deleted category
-                const validRows = result.rows.filter(row => row.category_id !== null && row.category_name !== null);
-                return { statusCode: 200, body: JSON.stringify(validRows) };
+                return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
                 const rules = JSON.parse(event.body);
