@@ -150,7 +150,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 apiCall(API.CLIENT_TEAM)
             ]);
             
-            // Defensive assignment using Array.isArray check to prevent the TypeError
+            // FIX: Defensive assignment using Array.isArray check to prevent the TypeError
             state.allTeams = Array.isArray(teams) ? teams : [];
             state.allCategories = Array.isArray(categories) ? categories : [];
             state.allClientConfigs = Array.isArray(configs) ? configs : [];
@@ -314,10 +314,14 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // CORRECTED FUNCTION
     function renderMappingUI() {
+        // Renders the mapping table when a file is initially uploaded (new mapping process)
         dom.mappingHeader.innerHTML = `Map Your Fields to Detected Headers: <span class="badge bg-secondary">${state.detectedHeaders.length} columns found</span>`;
         dom.mappingAlert.classList.add('d-none');
         dom.mappingTableBody.innerHTML = '';
+        
+        // FIX: Iterate over standardFields to ensure a row is created for EVERY possible mapping field.
         standardFields.forEach(field => {
             const row = dom.mappingTableBody.insertRow();
             row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`;
@@ -326,8 +330,11 @@ document.addEventListener('DOMContentLoaded', () => {
             select.className = 'form-select form-select-sm';
             select.dataset.standardKey = field.key;
             select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
+            
             const savedMapping = state.mappingsForEditing[field.key];
             let bestGuess = savedMapping && state.detectedHeaders.includes(savedMapping) ? savedMapping : '';
+            
+            // Populate dropdown with all detected headers
             state.detectedHeaders.forEach(header => {
                 const option = new Option(header, header);
                 if (header === bestGuess) option.selected = true;
@@ -338,12 +345,18 @@ document.addEventListener('DOMContentLoaded', () => {
         dom.mappingSection.style.display = 'block';
     }
     
+    // CORRECTED FUNCTION
     function renderMappingsFromObject(mappings) {
+        // Renders the mapping table when an existing configuration is loaded for editing
         dom.mappingHeader.innerHTML = 'Current Column Mappings';
         dom.mappingAlert.classList.remove('d-none');
         dom.mappingAlert.textContent = 'Upload a file to create new mappings, or copy from another configuration.';
         dom.mappingTableBody.innerHTML = '';
-        const allPossibleHeaders = [...new Set(Object.values(mappings))];
+        
+        // Get ALL possible headers/values from the existing mapping object, plus detected headers if available
+        const allPossibleHeaders = [...new Set([...Object.values(mappings), ...state.detectedHeaders])];
+        
+        // FIX: Iterate over standardFields to ensure a row is created for EVERY field.
         standardFields.forEach(field => {
             const row = dom.mappingTableBody.insertRow();
             row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`;
@@ -352,7 +365,10 @@ document.addEventListener('DOMContentLoaded', () => {
             select.className = 'form-select form-select-sm';
             select.dataset.standardKey = field.key;
             select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
+            
             const savedValue = mappings[field.key];
+            
+            // Populate dropdown with all known headers
             allPossibleHeaders.forEach(header => {
                 const option = new Option(header, header);
                 if(header === savedValue) option.selected = true;
@@ -372,7 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 row.insertCell().innerHTML = `<div class="rule-text" title="${rule.text}">${rule.text}</div>`;
                 const categoryCell = row.insertCell();
                 categoryCell.appendChild(createCategoryDropdown(rule.category_id));
-                row.insertCell().innerHTML = `<button type="button" class="btn btn-danger btn-sm py-0 px-1 btn-delete-rule" data-type="${tableBody.id.includes('Edits') ? 'edit' : 'note'}" data-text="${encodeURIComponent(rule.text)}">&times;</button>`;
+                row.insertCell().innerHTML = `<button type="button" class="btn btn-danger btn-sm py-0 px-1 btn-delete-rule" data-type="${tableBody.id.includes('Edits') ? 'edit' : 'note'}" data-text="${encodeURIComponent(rule.text)}">&times;`;
             });
         };
         renderTable(dom.existingEditsTableBody, editRules);
@@ -464,7 +480,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function deleteTeam(id) {
         if (!confirm('Are you sure? This may unassign categories from this team.')) return;
         try {
-            await apiCall(`${API.TEAMS}?id=${id}`, { method: 'DELETE' });
+            await apiCall(API.TEAMS, { method: 'DELETE', body: JSON.stringify({ id }) });
             await loadAllData();
         } catch (error) {
             alert('Failed to delete team.');
@@ -474,7 +490,7 @@ document.addEventListener('DOMContentLoaded', () => {
     async function deleteCategory(id) {
         if (!confirm('Are you sure? This also deletes all associated categorization rules.')) return;
         try {
-            await apiCall(`${API.CATEGORIES}?id=${id}`, { method: 'DELETE' });
+            await apiCall(API.CATEGORIES, { method: 'DELETE', body: JSON.stringify({ id }) });
             await loadAllData();
         } catch (error) {
             alert('Failed to delete category.');
@@ -501,11 +517,13 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const editPromise = editRulesToSave.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${configId}`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(editRulesToSave.map(({ row, ...rest }) => rest))
             }) : Promise.resolve();
 
             const notePromise = noteRulesToSave.length > 0 ? apiCall(`${API.RULES}?type=note&config_id=${configId}`, {
                 method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(noteRulesToSave.map(({ row, ...rest }) => rest))
             }) : Promise.resolve();
 
@@ -535,6 +553,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             await apiCall(`${API.RULES}?type=${type}&config_id=${configId}`, {
                 method: 'DELETE',
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ text })
             });
             await loadRulesForConfig(configId);
@@ -559,8 +578,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         try {
             await Promise.all([
-                editRulesToUpdate.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${configId}`, { method: 'POST', body: JSON.stringify(editRulesToUpdate) }) : Promise.resolve(),
-                noteRulesToUpdate.length > 0 ? apiCall(`${API.RULES}?type=note&config_id=${configId}`, { method: 'POST', body: JSON.stringify(noteRulesToUpdate) }) : Promise.resolve()
+                editRulesToUpdate.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${configId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editRulesToUpdate) }) : Promise.resolve(),
+                noteRulesToUpdate.length > 0 ? apiCall(`${API.RULES}?type=note&config_id=${configId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(noteRulesToUpdate) }) : Promise.resolve()
             ]);
             alert('Existing rule changes saved successfully!');
             await loadRulesForConfig(configId);
@@ -744,7 +763,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const name = dom.newTeamNameInput.value.trim();
             if (!name) return;
             try {
-                await apiCall(API.TEAMS, { method: 'POST', body: JSON.stringify({ team_name: name }) });
+                await apiCall(API.TEAMS, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_name: name }) });
                 dom.newTeamNameInput.value = '';
                 await loadAllData();
             } catch (error) {
@@ -759,7 +778,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const send_to_l1_monitor = dom.l1MonitorCheckbox.checked;
             if (!category_name || !team_id) return alert('Please select a team and enter a category name.');
             try {
-                await apiCall(API.CATEGORIES, { method: 'POST', body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) });
+                await apiCall(API.CATEGORIES, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ category_name, team_id, send_to_l1_monitor }) });
                 dom.newCategoryNameInput.value = '';
                 dom.l1MonitorCheckbox.checked = false;
                 await loadAllData();
@@ -844,7 +863,7 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             const team_ids = Array.from(dom.clientTeamChecklist.querySelectorAll('input:checked')).map(input => parseInt(input.value, 10));
             try {
-                await apiCall(API.CLIENT_TEAM, { method: 'POST', body: JSON.stringify({ config_id: parseInt(config_id, 10), team_ids }) });
+                await apiCall(API.CLIENT_TEAM, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ config_id: parseInt(config_id, 10), team_ids }) });
                 alert("Client-Team associations saved successfully.");
             } catch (error) {
                 alert(`Failed to save associations: ${error.message}`);
@@ -921,8 +940,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             try {
                 await Promise.all([
-                    newEditRules.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${targetConfigId}`, { method: 'POST', body: JSON.stringify(newEditRules) }) : Promise.resolve(),
-                    newNoteRules.length > 0 ? apiCall(`${API.RULES}?type=note&config_id=${targetConfigId}`, { method: 'POST', body: JSON.stringify(newNoteRules) }) : Promise.resolve()
+                    newEditRules.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${targetConfigId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newEditRules) }) : Promise.resolve(),
+                    newNoteRules.length > 0 ? apiCall(`${API.RULES}?type=note&config_id=${targetConfigId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newNoteRules) }) : Promise.resolve()
                 ]);
                 alert(`Successfully copied ${newEditRules.length} edit rule(s) and ${newNoteRules.length} note rule(s).`);
                 dom.copyRulesModal.hide();
