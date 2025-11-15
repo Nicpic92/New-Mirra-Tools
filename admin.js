@@ -132,6 +132,25 @@ document.addEventListener('DOMContentLoaded', () => {
             throw error;
         }
     }
+    
+    /**
+     * Executes an API call, logging the error but returning a safe empty array on failure
+     * so that Promise.all does not fail and subsequent setup steps can continue.
+     * @param {string} url The API endpoint to fetch.
+     * @param {object} [options={}] Optional fetch options.
+     * @returns {Promise<any | []>} The JSON response or an empty array on error.
+     */
+    async function safeApiCall(url, options = {}) {
+        try {
+            // This will throw if the response status is not OK (like the 500 error)
+            const response = await apiCall(url, options); 
+            return response;
+        } catch (error) {
+            // Log the failure, but prevent the Promise.all from crashing
+            console.error(`Skipping loading of critical data from ${url} due to error.`, error);
+            return [];
+        }
+    }
 
     /**
      * Loads all necessary data from the backend when the page initializes.
@@ -143,11 +162,12 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.categorizationConfigSelector.disabled = true;
             dom.clientTeamConfigSelector.disabled = true;
 
+            // Use safeApiCall to ensure one failed fetch does not block the entire page from loading.
             const [teams, categories, configs, clientTeams] = await Promise.all([
-                apiCall(API.TEAMS),
-                apiCall(API.CATEGORIES),
-                apiCall(API.CONFIG),
-                apiCall(API.CLIENT_TEAM)
+                safeApiCall(API.TEAMS),
+                safeApiCall(API.CATEGORIES),
+                safeApiCall(API.CONFIG),
+                safeApiCall(API.CLIENT_TEAM)
             ]);
             
             // FIX: Defensive assignment using Array.isArray check to prevent the TypeError
@@ -167,6 +187,11 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.clientRuleFilter.disabled = false;
             dom.categorizationConfigSelector.disabled = false;
             dom.clientTeamConfigSelector.disabled = false;
+            
+            // CRITICAL CHECK: If any core list is still empty, warn the user.
+            if (state.allTeams.length === 0 || state.allCategories.length === 0 || state.allClientConfigs.length === 0) {
+                 console.warn("One or more core data lists are empty. Check Netlify logs for the specific endpoints that failed.");
+            }
         } catch (error) {
             // Error is already logged by apiCall, but we can add more context here if needed.
             console.error("Failed to complete initial data load.", error);
@@ -875,8 +900,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 dom.clientTeamChecklist.innerHTML = '<small class="text-muted">Select a client to see teams.</small>';
                 return;
             }
-            const associatedTeamIds = await apiCall(`${API.CLIENT_TEAM}?config_id=${configId}`);
-            const teamIdSet = new Set(associatedTeamIds);
+            dom.clientTeamChecklist.innerHTML = ''; // Clear existing checklist
+            
+            const associatedTeamIds = await safeApiCall(`${API.CLIENT_TEAM}?config_id=${configId}`);
+            const teamIdSet = new Set(associatedTeamIds.map(a => a.team_id)); // Map the response structure
+            
             state.allTeams.sort((a, b) => a.team_name.localeCompare(b.team_name)).forEach(team => {
                 const div = document.createElement('div');
                 div.className = 'form-check';
@@ -954,10 +982,10 @@ document.addEventListener('DOMContentLoaded', () => {
             let sourceEditRules = [], sourceNoteRules = [];
             try {
                 [sourceEditRules, sourceNoteRules] = await Promise.all([
-                    apiCall(`${API.RULES}?type=edit&config_id=${sourceConfigId}`),
-                    apiCall(`${API.RULES}?type=note&config_id=${sourceConfigId}`)
+                    safeApiCall(`${API.RULES}?type=edit&config_id=${sourceConfigId}`),
+                    safeApiCall(`${API.RULES}?type=note&config_id=${sourceConfigId}`)
                 ]);
-            } catch (e) { return; /* apiCall already alerted */ }
+            } catch (e) { return; /* safeApiCall handles error logging */ }
             
             const existingEditTexts = new Set(state.activeEditRules.map(r => r.text));
             const existingNoteTexts = new Set(state.activeNoteRules.map(r => r.text));
