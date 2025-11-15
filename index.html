@@ -157,27 +157,37 @@
         let allConfigs = [];
         let allCategories = [];
         let teamReportConfigs = [];
-        let categorizationConfig = {
-            editRulesMap: new Map(),
-            noteRulesMap: new Map()
-        };
+        let clientRules = { editRules: [], noteRules: [] };
 
         // --- SMART getVal FUNCTION ---
         const getVal = (claim, standardKey) => {
             const mappedKey = currentColumnMappings[standardKey];
             return (mappedKey && claim[mappedKey] !== undefined) ? claim[mappedKey] : undefined;
         };
+        
+        const getRawVal = (claim, rawHeader) => {
+            return claim[rawHeader];
+        };
 
         // --- DYNAMIC CATEGORIZATION LOGIC ---
         function getClaimCategory(claim) {
             const notes = (getVal(claim, 'notes') || '').toLowerCase();
             const edit = getVal(claim, 'edit');
-            if (edit && categorizationConfig.editRulesMap.has(edit)) {
-                return { ...categorizationConfig.editRulesMap.get(edit), source: 'Edit Rule' };
+            
+            const categoryMap = new Map(allCategories.map(cat => [cat.id, cat]));
+
+            const editRule = clientRules.editRules.find(r => r.text === edit);
+            if (editRule) {
+                const category = categoryMap.get(editRule.category_id);
+                if(category) return { ...category, category: category.category_name, source: 'Edit Rule' };
             }
+
             if (notes) {
-                for (const [keyword, rule] of categorizationConfig.noteRulesMap.entries()) {
-                    if (notes.includes(keyword)) return { ...rule, source: 'Note Rule' };
+                for (const noteRule of clientRules.noteRules) {
+                    if (notes.includes(noteRule.text)) {
+                        const category = categoryMap.get(noteRule.category_id);
+                        if(category) return { ...category, category: category.category_name, source: 'Note Rule' };
+                    }
                 }
             }
             return { category: 'Needs Triage', source: 'Default', teamName: 'Needs Assignment', send_to_l1_monitor: false };
@@ -206,8 +216,7 @@
         document.getElementById('configSelector').addEventListener('change', async (e) => {
             const selectedId = e.target.value;
             const selectedConfig = allConfigs.find(c => c.id == selectedId);
-            categorizationConfig.editRulesMap.clear();
-            categorizationConfig.noteRulesMap.clear();
+            clientRules = { editRules: [], noteRules: [] };
             
             if (selectedConfig?.config_data) {
                 document.getElementById('clientName').value = selectedConfig.config_data.clientName || '';
@@ -219,17 +228,8 @@
                         fetch(`/.netlify/functions/client-rules?type=note&config_id=${selectedId}`)
                     ]);
                     if (!editRes.ok || !noteRes.ok) throw new Error('Failed to fetch rules.');
-                    const editRules = await editRes.json();
-                    const noteRules = await noteRes.json();
-                    const categoryMap = new Map(allCategories.map(cat => [cat.id, cat]));
-                    editRules.forEach(r => {
-                        const category = categoryMap.get(r.category_id);
-                        if (category) categorizationConfig.editRulesMap.set(r.text, { category: category.category_name, teamId: category.team_id, teamName: category.team_name, send_to_l1_monitor: category.send_to_l1_monitor });
-                    });
-                    noteRules.forEach(r => {
-                        const category = categoryMap.get(r.category_id);
-                        if (category) categorizationConfig.noteRulesMap.set(r.text, { category: category.category_name, teamId: category.team_id, teamName: category.team_name, send_to_l1_monitor: category.send_to_l1_monitor });
-                    });
+                    clientRules.editRules = await editRes.json();
+                    clientRules.noteRules = await noteRes.json();
                 } catch (error) {
                     console.error('Error loading client-specific rules:', error);
                     alert('Could not load categorization rules. Categorization may be incorrect.');
@@ -327,7 +327,8 @@
 
                 processedClaim.isActionable = actionableStates.includes(processedClaim.state);
                 if (processedClaim.isActionable) {
-                    Object.assign(processedClaim, getClaimCategory(rawClaim));
+                    const categoryInfo = getClaimCategory(rawClaim);
+                    Object.assign(processedClaim, categoryInfo);
                     processedClaim.priorityScore = getPriorityScore(processedClaim);
                 } else {
                     processedClaim.category = 'N/A';
@@ -372,7 +373,7 @@
             actionable.sort((a, b) => (b[currentSort.column] || 0) - (a[currentSort.column] || 0) * (currentSort.direction === 'asc' ? 1 : -1));
             document.getElementById('work-queue-body').innerHTML = actionable.map(claim =>
                 `<tr>
-                    <td>${claim.priorityScore}</td> <td>${claim.category || 'N/A'}</td> <td>${claim.source || 'N/A'}</td> <td>${claim.teamName || 'N/A'}</td>
+                    <td>${claim.priorityScore}</td> <td>${claim.category || 'N/A'}</td> <td>${claim.source || 'N/A'}</td> <td>${claim.team_name || 'N/A'}</td>
                     <td></td> <td>${claim.w9Attached || ''}</td> <td>${claim.tinHasW9InPV || 'N/A'}</td> <td>${claim.pvApproved || ''}</td>
                     <td>${claim.pvSource || ''}</td> <td></td> <td></td> <td>${claim.claimId || 'N/A'}</td> <td>${claim.age || 0}</td>
                     <td>$${(claim.netPayment || 0).toFixed(2)}</td> <td>${claim.providerName || 'N/A'}</td>
@@ -384,7 +385,7 @@
             const teamContainer = document.getElementById('teamReportButtons');
             const specialtyContainer = document.getElementById('specialtyReportButtons');
             const actionableClaims = claims.filter(c => c.isActionable);
-            const teams = [...new Set(actionableClaims.map(c => c.teamName).filter(Boolean))];
+            const teams = [...new Set(actionableClaims.map(c => c.team_name).filter(Boolean))];
             teamContainer.innerHTML = teams.length === 0 ? '<p class="text-muted">No actionable claims found for any team.</p>' : '';
             teams.sort().forEach(teamName => {
                 const btn = document.createElement('button');
@@ -405,24 +406,26 @@
         }
 
         function downloadTeamReport(teamName, allActionableClaims) {
-            const teamClaims = allActionableClaims.filter(c => c.teamName === teamName);
+            const teamClaims = allActionableClaims.filter(c => c.team_name === teamName);
             if (teamClaims.length === 0) return alert(`No claims for team: ${teamName}`);
             const claimsByCategory = teamClaims.reduce((acc, claim) => { (acc[claim.category] = acc[claim.category] || []).push(claim); return acc; }, {});
             const wb = XLSX.utils.book_new();
             const today = new Date().toISOString().slice(0, 10);
+            
             Object.keys(claimsByCategory).sort().forEach(categoryName => {
                 const claimsInCat = claimsByCategory[categoryName];
                 const category = claimsInCat.length > 0 ? allCategories.find(c => c.category_name === categoryName && c.team_name === teamName) : null;
                 const customReportConfig = category ? teamReportConfigs.find(rc => rc.team_id === category.team_id && rc.category_id === category.id) : null;
+                
                 let reportData;
-                if (customReportConfig) {
+                if (customReportConfig?.report_config_data?.groupBy) {
                     const { groupBy } = customReportConfig.report_config_data;
                     const aggregatedData = new Map();
                     claimsInCat.forEach(claim => {
-                        const groupByKey = groupBy.map(field => getVal(claim.original, field.key) || 'N/A').join('|');
+                        const groupByKey = groupBy.map(field => getRawVal(claim.original, field.key) || 'N/A').join('|');
                         if (!aggregatedData.has(groupByKey)) {
                             const initialRow = {};
-                            groupBy.forEach(field => { initialRow[field.displayName] = getVal(claim.original, field.key) || 'N/A'; });
+                            groupBy.forEach(field => { initialRow[field.displayName] = getRawVal(claim.original, field.key) || 'N/A'; });
                             initialRow['Number of Claims'] = 0;
                             aggregatedData.set(groupByKey, initialRow);
                         }
@@ -433,21 +436,29 @@
                 } else {
                     reportData = claimsInCat.map(claim => ({ ...claim.original, 'Priority Score': claim.priorityScore, 'Category': claim.category, 'Source': claim.source }));
                 }
-                reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
-                const ws = XLSX.utils.json_to_sheet(reportData);
-                const safeSheetName = categoryName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
-                XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
+
+                if(reportData.length > 0) {
+                    reportData.forEach(row => { row['Prov Ops Team Mbr'] = ''; row['PV Updated (Y/N)'] = ''; row['Notes'] = ''; });
+                    const ws = XLSX.utils.json_to_sheet(reportData);
+                    const safeSheetName = categoryName.replace(/[\/\\?*\[\]]/g, '').substring(0, 31);
+                    XLSX.utils.book_append_sheet(wb, ws, safeSheetName);
+                }
             });
-            const clientName = document.getElementById('clientName').value.trim().replace(/ /g, '_') || 'Client';
-            const safeTeamName = teamName.replace(/ /g, '_');
-            XLSX.writeFile(wb, `${clientName}_${safeTeamName}_Report_${today}.xlsx`);
+
+            if (wb.SheetNames.length > 0) {
+                const clientName = document.getElementById('clientName').value.trim().replace(/ /g, '_') || 'Client';
+                const safeTeamName = teamName.replace(/ /g, '_');
+                XLSX.writeFile(wb, `${clientName}_${safeTeamName}_Report_${today}.xlsx`);
+            } else {
+                alert(`No data available to generate a report for team: ${teamName}`);
+            }
         }
 
         function downloadL1MonitorReport(l1Claims) {
             const today = new Date().toISOString().slice(0, 10);
             const clientName = document.getElementById('clientName').value.trim().replace(/ /g, '_') || 'Client';
             const reportData = l1Claims.map(claim => ({
-                'Claim ID': claim.claimId, 'Category': claim.category, 'Assigned Team': claim.teamName, 'Age (Days)': claim.age,
+                'Claim ID': claim.claimId, 'Category': claim.category, 'Assigned Team': claim.team_name, 'Age (Days)': claim.age,
                 'Amount at Risk': claim.netPayment, 'Billing Provider Name': claim.providerName,
                 'Billing Provider Tax ID': getVal(claim.original, 'billingProviderTaxId'),
                 'TIN Has W9 in PV': claim.tinHasW9InPV, 'Claim-Specific W9 Attached': claim.w9Attached, 'Claim-Specific PV Notes': claim.pvSource
@@ -476,4 +487,4 @@
 
     </script>
 </body>
-</html>
+</html>```
