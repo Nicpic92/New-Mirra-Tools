@@ -1,6 +1,6 @@
 // --- START OF FILE client-team-associations.js ---
 
-const pool = require('./database.js'); // THE FIX: Use the shared pool
+const pool = require('./database.js');
 
 exports.handler = async function(event) {
     const { config_id } = event.queryStringParameters || {};
