@@ -19,7 +19,7 @@ if (!global.dbPool) {
   global.dbPool = new Pool({
     connectionString: process.env.DATABASE_URL,
 
-    // THE FIX: Add SSL configuration. Most cloud databases require this.
+    // Add SSL configuration. Most cloud databases require this.
     // This tells the client to connect via SSL but not to fail if the
     // certificate isn't from a recognized authority, which is standard
     // for many managed database services.
