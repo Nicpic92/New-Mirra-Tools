@@ -3,21 +3,14 @@
 const pool = require('./database.js');
 
 exports.handler = async function(event) {
-    // THE FIX: The 'id' parameter is now also destructured from the query string.
     const { id, team_id, category_id } = event.queryStringParameters || {};
 
     try {
         switch (event.httpMethod) {
             case 'GET': {
-                // If no params, get all configs. Otherwise, get for a specific team/category.
-                if (!team_id || !category_id) {
-                    const result = await pool.query('SELECT * FROM team_report_configurations;');
-                    return { statusCode: 200, body: JSON.stringify(result.rows) };
-                } else {
-                    const sql = 'SELECT * FROM team_report_configurations WHERE team_id = $1 AND category_id = $2;';
-                    const result = await pool.query(sql, [team_id, category_id]);
-                    return { statusCode: 200, body: JSON.stringify(result.rows[0] || null) };
-                }
+                // If no params, get all configs.
+                const result = await pool.query('SELECT * FROM team_report_configurations ORDER BY team_id, category_id;');
+                return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
                 const { team_id, category_id, report_config_data } = JSON.parse(event.body);
@@ -33,9 +26,12 @@ exports.handler = async function(event) {
                 return { statusCode: 201, body: JSON.stringify(result.rows[0]) };
             }
             case 'PUT': {
+                 // The 'id' for the WHERE clause comes from the query string
+                 if (!id) return { statusCode: 400, body: 'Missing configuration ID in query string for update.' };
+                 
                  const { team_id, category_id, report_config_data } = JSON.parse(event.body);
-                 if (!id || !team_id || !category_id || !report_config_data) {
-                    return { statusCode: 400, body: 'Missing required parameters for update.' };
+                 if (!team_id || !category_id || !report_config_data) {
+                    return { statusCode: 400, body: 'Missing required parameters in body for update.' };
                 }
                 const sql = `
                     UPDATE team_report_configurations 
@@ -47,7 +43,6 @@ exports.handler = async function(event) {
                 return { statusCode: 200, body: JSON.stringify(result.rows[0]) };
             }
             case 'DELETE': {
-                // THE FIX: The 'id' now correctly comes from the query string parameters.
                 if (!id) return { statusCode: 400, body: 'Missing configuration ID in query string' };
                 await pool.query('DELETE FROM team_report_configurations WHERE id = $1;', [id]);
                 return { statusCode: 200, body: JSON.stringify({ message: 'Report configuration deleted' }) };
