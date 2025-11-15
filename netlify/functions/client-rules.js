@@ -1,16 +1,27 @@
-// --- START OF FILE client-rules.js ---
+// --- START OF FILE client-rules.js (Refactored) ---
 
 const pool = require('./database.js');
+const { log, handleError } = require('./utils/logger.js'); // Import the utility
 
 exports.handler = async function(event) {
+    const functionName = 'client-rules.js'; // Define function name for context
+
     try {
         const { type, config_id } = event.queryStringParameters || {};
 
+        log('INFO', functionName, 'Handler invoked.', {
+            httpMethod: event.httpMethod,
+            type: type || 'N/A',
+            config_id: config_id || 'N/A'
+        });
+
         if (!['edit', 'note'].includes(type)) {
+            log('WARN', functionName, 'Bad Request: Invalid rule type specified.', { type });
             return { statusCode: 400, body: 'Invalid rule type specified.' };
         }
         
         if (!config_id) {
+            log('WARN', functionName, 'Bad Request: Missing config_id parameter.');
             return { statusCode: 400, body: 'Missing config_id parameter.' };
         }
 
@@ -19,9 +30,6 @@ exports.handler = async function(event) {
 
         switch (event.httpMethod) {
             case 'GET': {
-                // CORRECTED: Changed LEFT JOIN to INNER JOIN for efficiency.
-                // This prevents fetching rules that point to a deleted category,
-                // letting the database do the filtering work instead of the application code.
                 const sql = `
                     SELECT r.${textField} as text, r.category_id, c.category_name, t.team_name
                     FROM ${tableName} r
@@ -35,34 +43,39 @@ exports.handler = async function(event) {
             case 'POST': {
                 const rules = JSON.parse(event.body);
                 if (!Array.isArray(rules) || rules.length === 0) {
+                    log('WARN', functionName, 'Bad Request: Body must be a non-empty array.', { config_id });
                     return { statusCode: 400, body: 'Request body must be a non-empty array.' };
                 }
+                
+                log('INFO', functionName, `Starting transaction to save ${rules.length} rules for config_id: ${config_id}`);
+
                 const client = await pool.connect();
                 try {
                     await client.query('BEGIN');
                     
                     for (const rule of rules) {
                         if (rule.text && rule.category_id) {
-                            // 1. Check if a rule with this text and config_id already exists.
                             const checkSql = `SELECT id FROM ${tableName} WHERE config_id = $1 AND ${textField} = $2;`;
                             const { rows } = await client.query(checkSql, [config_id, rule.text]);
 
                             if (rows.length > 0) {
-                                // 2. If it exists, UPDATE the existing rule.
                                 const existingRuleId = rows[0].id;
                                 const updateSql = `UPDATE ${tableName} SET category_id = $1, last_seen = CURRENT_TIMESTAMP WHERE id = $2;`;
                                 await client.query(updateSql, [rule.category_id, existingRuleId]);
+                                log('INFO', functionName, `UPDATED rule for config_id ${config_id}`, { ruleText: rule.text, newCategoryId: rule.category_id });
                             } else {
-                                // 3. If it does not exist, INSERT a new rule.
                                 const insertSql = `INSERT INTO ${tableName} (config_id, ${textField}, category_id) VALUES ($1, $2, $3);`;
                                 await client.query(insertSql, [config_id, rule.text, rule.category_id]);
+                                log('INFO', functionName, `INSERTED new rule for config_id ${config_id}`, { ruleText: rule.text, categoryId: rule.category_id });
                             }
                         }
                     }
                     
                     await client.query('COMMIT');
+                    log('INFO', functionName, `COMMITTED transaction for config_id: ${config_id}`);
                 } catch (e) {
                     await client.query('ROLLBACK');
+                    log('ERROR', functionName, `Transaction ROLLED BACK for config_id: ${config_id}`, { errorMessage: e.message });
                     throw e; // Rethrow to be caught by the outer catch block
                 } finally {
                     client.release();
@@ -72,24 +85,21 @@ exports.handler = async function(event) {
             case 'DELETE': {
                 const { text } = JSON.parse(event.body);
                 if (!text) {
+                    log('WARN', functionName, 'Bad Request: Missing rule text to delete.', { config_id });
                     return { statusCode: 400, body: 'Missing rule text to delete.' };
                 }
                 const sql = `DELETE FROM ${tableName} WHERE ${textField} = $1 AND config_id = $2;`;
                 await pool.query(sql, [text, config_id]);
+                log('INFO', functionName, `DELETED rule for config_id: ${config_id}`, { ruleText: text });
                 return { statusCode: 200, body: JSON.stringify({ message: 'Rule deleted.' }) };
             }
             default:
+                log('WARN', functionName, `Method Not Allowed: ${event.httpMethod}`);
                 return { statusCode: 405, body: 'Method Not Allowed' };
         }
     } catch (error) {
-        console.error('!!! UNHANDLED ERROR in client-rules.js:', error);
-        return {
-            statusCode: 500,
-            body: JSON.stringify({
-                error: "Internal Server Error in client-rules.js function.",
-                message: error.message,
-                stack: error.stack
-            })
-        };
+        // All unhandled errors will be caught and logged consistently here.
+        return handleError(error, functionName, event);
     }
 };
+// --- END OF FILE client-rules.js (Refactored) ---
