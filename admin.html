@@ -104,13 +104,13 @@
             </div>
         </div>
 
-        <!-- CORRECTED: UNIVERSAL TEAM REPORT BUILDER SECTION -->
+        <!-- NEW AND IMPROVED: UNIVERSAL TEAM REPORT BUILDER SECTION -->
         <div class="row g-5 mt-4">
             <div class="col-12">
                 <div class="card">
                     <div class="card-body">
                         <h2>Universal Team Report Builder</h2>
-                        <p class="text-muted">Define a universal report layout for any Team and Category combination. This layout applies globally, regardless of the client.</p>
+                        <p class="text-muted">Define a universal data-table report for any Team and Category combination. This layout applies globally and generates an aggregated XLSX file with claim counts.</p>
                         
                         <div class="row bg-light p-3 rounded mb-4">
                             <div class="col-md-6">
@@ -127,25 +127,20 @@
                             <h5 id="builderHeader"></h5>
                              <form id="reportBuilderForm">
                                 <input type="hidden" id="teamReportConfigId">
+                                
+                                <h5>3. Configure Report Output</h5>
                                 <div class="mb-3">
-                                    <label for="teamPdfReportTitle" class="form-label">Report Title Template</label>
+                                    <label for="teamPdfReportTitle" class="form-label">Report Title Template (Optional)</label>
                                     <input type="text" class="form-control" id="teamPdfReportTitle" placeholder="{teamName} - {categoryName} Summary {date}">
-                                    <div class="form-text">Placeholders: {teamName}, {categoryName}, {date}.</div>
+                                    <div class="form-text">This is currently not used in the XLSX output but can be stored for future use.</div>
                                 </div>
-                                <div class="row">
-                                    <div class="col-md-6">
-                                        <h6>Report Layout</h6>
-                                        <ul class="list-group" id="teamReportLayout">
-                                            <li class="list-group-item text-muted">Add widgets from the right.</li>
-                                        </ul>
-                                    </div>
-                                    <div class="col-md-6">
-                                         <div class="d-flex justify-content-between align-items-center mb-2">
-                                            <h6>Available Widgets</h6>
-                                        </div>
-                                        <ul class="list-group" id="teamAvailableWidgets"></ul>
-                                    </div>
+                                
+                                <div class="mb-3">
+                                    <label for="teamReportColumns" class="form-label fw-bold">Group By Columns</label>
+                                    <select id="teamReportColumns" class="form-select" multiple size="8"></select>
+                                    <div class="form-text">Select one or more columns to group the data by. The generated report will include these columns plus a "Number of Claims" count for each group. Hold Ctrl/Cmd to select multiple. The available columns depend on the last report uploaded in the "Discover & Assign Rules" section below.</div>
                                 </div>
+
                                 <hr>
                                 <button type="button" class="btn btn-primary" id="saveReportLayoutBtn">Save Report Layout</button>
                                 <button type="button" class="btn btn-danger" id="deleteReportLayoutBtn" disabled>Delete This Layout</button>
@@ -212,6 +207,7 @@
                                     </div>
                                     <div class="col-md-8">
                                         <h5>3. Discover & Assign Rules</h5>
+                                        <p class="text-muted small"><strong>Important:</strong> Uploading a report here not only discovers new categorization rules but also populates the column list for the "Universal Team Report Builder" above.</p>
                                         <div class="row bg-light p-3 rounded mb-3">
                                             <div class="col-md-6"><label class="form-label fw-bold">Select Client</label><select class="form-select" id="categorizationConfigSelector"><option>Load configs...</option></select></div>
                                             <div class="col-md-6"><label class="form-label fw-bold">Upload Report</label><input class="form-control" type="file" id="categorizationReportUploader" accept=".xlsx" disabled></div>
@@ -429,8 +425,7 @@
 document.addEventListener('DOMContentLoaded', () => {
     // API Endpoints
     const CONFIG_API = '/.netlify/functions/configurations', TEAMS_API = '/.netlify/functions/teams', CATEGORIES_API = '/.netlify/functions/categories', RULES_API = '/.netlify/functions/client-rules', CLIENT_TEAM_API = '/.netlify/functions/client-team-associations';
-    // NEW: DEDICATED API FOR UNIVERSAL TEAM REPORTS
-    const TEAM_REPORTS_API = '/.netlify/functions/team-reports';
+    const TEAM_REPORTS_API = '/.netlify/functions/team-report-configs';
 
 
     // DOM Elements
@@ -449,7 +444,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const copyRulesModalEl = document.getElementById('copyRulesModal'), copyRulesModal = new bootstrap.Modal(copyRulesModalEl), copyRulesSourceConfigSelect = document.getElementById('copyRulesSourceConfig'), confirmCopyRulesBtn = document.getElementById('confirmCopyRulesBtn'), copyEditsCheckbox = document.getElementById('copyEditsCheckbox'), copyNotesCheckbox = document.getElementById('copyNotesCheckbox');
 
     // --- UNIVERSAL TEAM REPORT BUILDER DOM ELEMENTS ---
-    const reportBuilderTeam = document.getElementById('reportBuilderTeam'), reportBuilderCategory = document.getElementById('reportBuilderCategory'), builderContainer = document.getElementById('builderContainer'), builderHeader = document.getElementById('builderHeader'), reportBuilderForm = document.getElementById('reportBuilderForm'), teamReportConfigIdInput = document.getElementById('teamReportConfigId'), teamPdfReportTitleInput = document.getElementById('teamPdfReportTitle'), teamReportLayoutList = document.getElementById('teamReportLayout'), teamAvailableWidgetsList = document.getElementById('teamAvailableWidgets'), saveReportLayoutBtn = document.getElementById('saveReportLayoutBtn'), deleteReportLayoutBtn = document.getElementById('deleteReportLayoutBtn');
+    const reportBuilderTeam = document.getElementById('reportBuilderTeam'), reportBuilderCategory = document.getElementById('reportBuilderCategory'), builderContainer = document.getElementById('builderContainer'), builderHeader = document.getElementById('builderHeader'), reportBuilderForm = document.getElementById('reportBuilderForm'), teamReportConfigIdInput = document.getElementById('teamReportConfigId'), teamPdfReportTitleInput = document.getElementById('teamPdfReportTitle'), saveReportLayoutBtn = document.getElementById('saveReportLayoutBtn'), deleteReportLayoutBtn = document.getElementById('deleteReportLayoutBtn');
+    const teamReportColumns = document.getElementById('teamReportColumns');
 
 
     // Global State
@@ -457,7 +453,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let activeEditRules = [], activeNoteRules = [];
     let configSpecificRules = { editRulesMap: new Map(), noteRulesMap: new Map() };
     let mainReportFullData = [], triageClaimsData = [];
-    let allTeamReportConfigs = []; // NEW: State for universal team report layouts
+    let allTeamReportConfigs = []; // State for universal team report layouts
 
     // Disable selectors until data is loaded
     clientRuleFilter.disabled = true;
@@ -524,7 +520,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (noteRes.ok) activeNoteRules = await noteRes.json();
     }
     async function loadClientTeamAssociations() { const response = await fetch(CLIENT_TEAM_API); if(response.ok) allClientTeamAssociations = await response.json(); }
-    // NEW: Function to load universal team report configs
     async function loadTeamReportConfigs() {
         try {
             const response = await fetch(TEAM_REPORTS_API);
@@ -544,7 +539,6 @@ document.addEventListener('DOMContentLoaded', () => {
             categorizationConfigSelector.disabled = false;
             clientTeamConfigSelector.disabled = false;
 
-            // CORRECTED: Populate the universal team builder dropdown
             reportBuilderTeam.innerHTML = '<option value="">Select a team...</option>';
             allTeams.sort((a,b) => a.team_name.localeCompare(b.team_name)).forEach(team => {
                 reportBuilderTeam.add(new Option(team.team_name, team.id));
@@ -637,7 +631,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderCategoryList() { categoryListContainer.innerHTML = ''; const grouped = allCategories.reduce((acc, cat) => { const teamName = cat.team_name || 'Unassigned'; if (!acc[teamName]) acc[teamName] = []; acc[teamName].push(cat); return acc; }, {}); Object.keys(grouped).sort().forEach(teamName => { const card = document.createElement('div'); card.className = 'card mb-2'; card.innerHTML = `<div class="card-header py-1">${teamName}</div>`; const list = document.createElement('ul'); list.className = 'list-group list-group-flush'; grouped[teamName].sort((a,b) => a.category_name.localeCompare(b.category_name)).forEach(cat => { const li = document.createElement('li'); li.className = 'list-group-item py-1 d-flex justify-content-between align-items-center'; const nameSpan = document.createElement('span'); nameSpan.textContent = cat.category_name; li.appendChild(nameSpan); if (cat.send_to_l1_monitor) { const l1Span = document.createElement('span'); l1Span.className = 'l1-indicator'; l1Span.textContent = '(L1 Monitor)'; nameSpan.appendChild(l1Span); } const deleteBtn = document.createElement('button'); deleteBtn.className = 'btn btn-outline-danger btn-sm py-0 px-1 btn-delete-rule'; deleteBtn.innerHTML = '&times;'; deleteBtn.onclick = () => deleteCategory(cat.id); li.appendChild(deleteBtn); list.appendChild(li); }); card.appendChild(list); categoryListContainer.appendChild(card); }); }
     async function deleteCategory(id) { if (!confirm('Are you sure? This also deletes associated rules.')) return; try { await fetch(`${CATEGORIES_API}?id=${id}`, { method: 'DELETE' }); await loadAllData(); } catch (error) { alert('Failed to delete category.'); } }
     
-    // --- PDF & WIDGET BUILDER LOGIC ---
+    // --- PDF & WIDGET BUILDER LOGIC (FOR CLIENT CONFIGS) ---
     function initializeWidgetCreator() { const groupBySelect = document.getElementById('groupByColumn'); const metricColSelect = document.getElementById('metricColumn'); groupBySelect.innerHTML = '<option value="" disabled selected>Select a column...</option>'; metricColSelect.innerHTML = '<option value="" disabled selected>Select a column...</option>'; standardFields.filter(f => f.type === 'string' || f.type === 'date').forEach(field => { groupBySelect.add(new Option(field.displayName, field.key)); }); standardFields.filter(f => f.type === 'number').forEach(field => { metricColSelect.add(new Option(field.displayName, field.key)); }); metricTypeSelect.addEventListener('change', () => { metricColumnContainer.style.display = metricTypeSelect.value === 'sum' ? 'block' : 'none'; }); saveWidgetBtn.addEventListener('click', () => { if (!customWidgetForm.checkValidity()) { customWidgetForm.reportValidity(); return; } const newWidget = { id: `custom_${Date.now()}`, name: document.getElementById('widgetName').value, type: 'custom_table', groupBy: document.getElementById('groupByColumn').value, metricType: document.getElementById('metricType').value, metricColumn: metricTypeSelect.value === 'sum' ? document.getElementById('metricColumn').value : null, columns: [ { header: document.getElementById('tableHeader1').value, dataKey: 'label' }, { header: document.getElementById('tableHeader2').value, dataKey: 'data' } ] }; if(metricTypeSelect.value === 'sum' && !newWidget.metricColumn) { alert('Please select a column to sum.'); return; } currentCustomWidgets.push(newWidget); populateAvailableWidgets(); customWidgetModal.hide(); }); customWidgetModalEl.addEventListener('hidden.bs.modal', () => { customWidgetForm.reset(); metricColumnContainer.style.display = 'none'; }); }
     function populateAvailableWidgets() { availableWidgetsList.innerHTML = ''; const allWidgets = [...availablePdfWidgets, ...currentCustomWidgets]; allWidgets.forEach(widget => { const li = document.createElement('li'); li.className = 'list-group-item d-flex justify-content-between align-items-center'; li.textContent = widget.name; const btnGroup = document.createElement('div'); if (widget.type === 'custom_table') { const deleteBtn = document.createElement('button'); deleteBtn.type = 'button'; deleteBtn.className = 'btn btn-sm btn-outline-danger me-1'; deleteBtn.innerHTML = '<i class="bi bi-trash"></i>'; deleteBtn.onclick = (e) => { e.stopPropagation(); currentCustomWidgets = currentCustomWidgets.filter(w => w.id !== widget.id); populateAvailableWidgets(); }; btnGroup.appendChild(deleteBtn); } const addBtn = document.createElement('button'); addBtn.type = 'button'; addBtn.className = 'btn btn-sm btn-outline-primary'; addBtn.innerHTML = '<i class="bi bi-plus"></i> Add'; addBtn.onclick = () => addWidgetToLayout(widget); btnGroup.appendChild(addBtn); li.appendChild(btnGroup); availableWidgetsList.appendChild(li); }); }
     function addWidgetToLayout(widget, customTitle = '') { if (reportLayoutList.querySelector('.text-muted')) { reportLayoutList.innerHTML = ''; } const li = document.createElement('li'); li.className = 'list-group-item pdf-widget'; li.dataset.widgetId = widget.id; li.innerHTML = `<div class="d-flex justify-content-between align-items-center"><span class="fw-bold">${widget.name}</span><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.parentElement.parentElement.remove()">&times;</button></div><input type="text" class="form-control form-control-sm mt-2" value="${customTitle}" placeholder="Enter custom title (optional)">`; reportLayoutList.appendChild(li); }
@@ -803,49 +797,41 @@ document.addEventListener('DOMContentLoaded', () => {
         else alert("Assignment reports generated successfully.");
     }
     
-    // --- REWRITTEN: UNIVERSAL TEAM REPORT BUILDER LOGIC ---
-    function populateTeamBuilderAvailableWidgets() {
-        teamAvailableWidgetsList.innerHTML = '';
-        // Combine default widgets and any custom widgets created in the main config form
-        const allWidgets = [...availablePdfWidgets, ...currentCustomWidgets];
-        allWidgets.forEach(widget => {
-            const li = document.createElement('li');
-            li.className = 'list-group-item d-flex justify-content-between align-items-center';
-            li.textContent = widget.name;
-            const addBtn = document.createElement('button');
-            addBtn.type = 'button';
-            addBtn.className = 'btn btn-sm btn-outline-primary';
-            addBtn.innerHTML = '<i class="bi bi-plus"></i> Add';
-            addBtn.onclick = () => addWidgetToTeamLayout(widget);
-            li.appendChild(addBtn);
-            teamAvailableWidgetsList.appendChild(li);
-        });
-    }
-
-    function addWidgetToTeamLayout(widget, customTitle = '') {
-        if (teamReportLayoutList.querySelector('.text-muted')) {
-            teamReportLayoutList.innerHTML = '';
-        }
-        const li = document.createElement('li');
-        li.className = 'list-group-item pdf-widget';
-        li.dataset.widgetId = widget.id;
-        li.innerHTML = `<div class="d-flex justify-content-between align-items-center"><span class="fw-bold">${widget.name}</span><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.parentElement.parentElement.remove()">&times;</button></div><input type="text" class="form-control form-control-sm mt-2" value="${customTitle}" placeholder="Enter custom title (optional)">`;
-        teamReportLayoutList.appendChild(li);
-    }
-
-    function renderTeamPdfLayout(layout) {
-        teamReportLayoutList.innerHTML = '';
+    // --- UNIVERSAL TEAM REPORT BUILDER LOGIC ---
+    function renderTeamReportConfig(layout) {
         teamPdfReportTitleInput.value = layout?.reportTitle || '';
-        if (layout?.sections?.length > 0) {
-            const allWidgets = [...availablePdfWidgets, ...currentCustomWidgets];
-            layout.sections.forEach(section => {
-                const baseWidget = allWidgets.find(w => w.id === section.id);
-                if (baseWidget) {
-                    addWidgetToTeamLayout(baseWidget, section.title);
+        teamReportColumns.innerHTML = '';
+        teamReportColumns.disabled = false;
+
+        if (detectedHeaders.length > 0) {
+            // Get a map of standard keys to their mapped headers from the current client config
+            const getStandardKeyForHeader = (header) => {
+                for (const key in columnMappingsForCategorization) {
+                    if (columnMappingsForCategorization[key] === header) {
+                        const standardField = standardFields.find(sf => sf.key === key);
+                        return standardField ? standardField.displayName : header;
+                    }
                 }
+                return header;
+            };
+            
+            detectedHeaders.forEach(header => {
+                // Display the friendly standard name if available, otherwise the raw header
+                const displayName = getStandardKeyForHeader(header);
+                teamReportColumns.add(new Option(`${displayName} (${header})`, header));
             });
         } else {
-            teamReportLayoutList.innerHTML = '<li class="list-group-item text-muted">Add widgets from the right.</li>';
+            teamReportColumns.add(new Option('Upload a client report below to see columns here.', ''));
+            teamReportColumns.disabled = true;
+        }
+
+        if (layout?.groupBy) {
+            const selectedColumns = new Set(layout.groupBy.map(g => g.key)); // 'key' is the raw header name
+            Array.from(teamReportColumns.options).forEach(option => {
+                if (selectedColumns.has(option.value)) {
+                    option.selected = true;
+                }
+            });
         }
     }
     
@@ -855,14 +841,19 @@ document.addEventListener('DOMContentLoaded', () => {
         const configId = teamReportConfigIdInput.value;
         if (!teamId || !categoryId) return alert('A team and category must be selected.');
 
-        const sections = Array.from(teamReportLayoutList.querySelectorAll('.pdf-widget')).map(li => ({
-            id: li.dataset.widgetId,
-            title: li.querySelector('input').value.trim()
+        const selectedOptions = Array.from(teamReportColumns.selectedOptions);
+        if (selectedOptions.length === 0) {
+            return alert('Please select at least one column to group by.');
+        }
+
+        const groupBy = selectedOptions.map(opt => ({
+            key: opt.value, // The raw header name
+            displayName: opt.text.split('(')[0].trim() // The friendly display name
         }));
 
         const report_config_data = {
             reportTitle: teamPdfReportTitleInput.value.trim(),
-            sections
+            groupBy: groupBy
         };
         
         const method = configId ? 'PUT' : 'POST';
@@ -872,14 +863,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const res = await fetch(url, {
                 method,
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ team_id: teamId, category_id: categoryId, report_config_data })
+                body: JSON.stringify({ team_id: parseInt(teamId), category_id: parseInt(categoryId), report_config_data })
             });
             if (!res.ok) throw new Error(`Server responded with ${res.status}`);
             
             alert('Team report layout saved successfully!');
-            await loadTeamReportConfigs(); // Refresh local data
-            
-            // Manually re-trigger the change event to reload the UI with the saved data
+            await loadTeamReportConfigs();
             reportBuilderCategory.dispatchEvent(new Event('change'));
 
         } catch (error) {
@@ -898,7 +887,6 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!res.ok) throw new Error(`Server responded with ${res.status}`);
             alert('Report layout deleted.');
             await loadTeamReportConfigs();
-            // Reset UI
             builderContainer.classList.add('d-none');
             reportBuilderCategory.value = '';
         } catch (error) {
@@ -939,9 +927,18 @@ document.addEventListener('DOMContentLoaded', () => {
     categorizationReportUploader.addEventListener('change', async (event) => { 
         const file = event.target.files[0]; if (!file) return; 
         try {
-            mainReportFullData = await readFile(file);
+            const data = await readFile(file);
+            const headers = Object.keys(data[0] || {});
+            detectedHeaders = headers.filter(h => h != null && h.toString().trim() !== '');
+            
+            mainReportFullData = data;
             processUploadedReport(mainReportFullData);
             w9TriageSection.style.display = 'block'; triagePlaceholder.style.display = 'block'; triageResultsContainer.classList.add('d-none'); triageMrw9Uploader.value = '';
+
+            if(!builderContainer.classList.contains('d-none')) {
+                reportBuilderCategory.dispatchEvent(new Event('change'));
+            }
+
         } catch(error) { alert(`Error processing main report: ${error.message}`); }
     });
 
@@ -1029,7 +1026,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) { alert(`An error occurred while copying rules: ${error.message}`); }
     });
     
-    // --- REWRITTEN/NEW EVENT LISTENERS for Universal Team Report Builder ---
+    // --- EVENT LISTENERS for Universal Team Report Builder ---
     reportBuilderTeam.addEventListener('change', () => {
         const teamId = parseInt(reportBuilderTeam.value, 10);
         builderContainer.classList.add('d-none');
@@ -1051,7 +1048,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         builderContainer.classList.add('d-none');
         reportBuilderForm.reset();
-        teamReportConfigIdInput.value = ''; // Clear the hidden ID input
+        teamReportConfigIdInput.value = '';
 
         if (!teamId || !categoryId) return;
         
@@ -1065,15 +1062,13 @@ document.addEventListener('DOMContentLoaded', () => {
         
         if (existingConfig) {
             teamReportConfigIdInput.value = existingConfig.id;
-            renderTeamPdfLayout(existingConfig.report_config_data);
+            renderTeamReportConfig(existingConfig.report_config_data);
             deleteReportLayoutBtn.disabled = false;
         } else {
-            renderTeamPdfLayout(null); // Clear the layout for a new config
+            renderTeamReportConfig(null);
             deleteReportLayoutBtn.disabled = true;
         }
         
-        // Populate the available widgets every time, as the custom widgets list might have changed
-        populateTeamBuilderAvailableWidgets();
         builderContainer.classList.remove('d-none');
     });
 
