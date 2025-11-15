@@ -197,6 +197,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Utility to read an XLSX file and convert it to a JSON object array.
+     * This version uses a robust two-pass method to ensure accurate header detection,
+     * even if the columns contain leading/trailing whitespace or mixed data types.
      * @param {File} file The file object from a file input.
      * @returns {Promise<Array<object>>} A promise that resolves with the sheet data.
      */
@@ -207,9 +209,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 try {
                     const data = new Uint8Array(e.target.result);
                     const workbook = XLSX.read(data, { type: 'array' });
-                    // Read the first sheet found in the workbook
-                    const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-                    resolve(jsonData);
+                    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+
+                    // PASS 1: Read the sheet as an array of arrays (no JSON conversion yet)
+                    // We assume headers are in the first row (range: 0)
+                    const rawData = XLSX.utils.sheet_to_json(sheet, {
+                        header: 1, 
+                        range: 0 
+                    });
+
+                    if (!rawData || rawData.length === 0 || !rawData[0]) {
+                        return reject(new Error("File is empty or contains no readable data."));
+                    }
+                    
+                    // Clean and filter the first row to get the actual headers.
+                    // This handles potential nulls, trailing spaces, or weird characters.
+                    const rawHeaders = rawData[0];
+                    const cleanHeaders = rawHeaders
+                        .map(h => (h != null ? h.toString().trim() : null))
+                        .filter(h => h && h.length > 0);
+
+                    if (cleanHeaders.length === 0) {
+                        return reject(new Error("Could not detect any valid column headers in the first row."));
+                    }
+                    
+                    // PASS 2: Convert the sheet to JSON, using the cleaned headers and starting data from row 2 (index 1)
+                    const processedData = XLSX.utils.sheet_to_json(sheet, {
+                        header: cleanHeaders, 
+                        range: 1 
+                    });
+                    
+                    resolve(processedData);
                 } catch (err) {
                     console.error("Error parsing XLSX file:", err);
                     reject(new Error("Failed to parse the XLSX file. Please ensure it's a valid format and the headers are in the first row."));
