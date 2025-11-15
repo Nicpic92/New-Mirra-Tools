@@ -499,17 +499,39 @@ document.addEventListener('DOMContentLoaded', () => {
     function editConfig(configId) {
         const config = allClientConfigs.find(c => c.id === configId);
         if (!config) return;
+        
         clearConfigForm();
+        
         configIdInput.value = config.id;
         configNameInput.value = config.config_name;
         clientNameInput.value = config.config_data.clientName || '';
         mappingsForEditing = config.config_data.columnMappings || {};
         currentCustomWidgets = config.config_data.pdfConfig?.customWidgets || [];
+        
         mappingSection.style.display = 'block';
         mappingTableBody.innerHTML = '';
-        mappingAlert.textContent = 'Upload a new file to view or change column mappings for this configuration.';
+        mappingAlert.textContent = 'Current mappings are shown below. Upload a new file to change them.';
         mappingAlert.classList.remove('d-none');
-        mappingHeader.innerHTML = 'Map Your Fields to Detected Headers:';
+        
+        const tempHeaders = Object.values(mappingsForEditing);
+        
+        standardFields.forEach(field => {
+            const row = mappingTableBody.insertRow();
+            row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`;
+            const cell2 = row.insertCell();
+            const select = document.createElement('select');
+            select.className = 'form-select form-select-sm';
+            select.dataset.standardKey = field.key;
+            
+            const savedValue = mappingsForEditing[field.key];
+            if (savedValue) {
+                select.add(new Option(savedValue, savedValue, true, true));
+            } else {
+                select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
+            }
+            cell2.appendChild(select);
+        });
+
         populateAvailableWidgets();
         renderPdfLayout(config.config_data.pdfConfig);
     }
@@ -608,6 +630,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function readFile(file) { return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = (e) => { try { const data = new Uint8Array(e.target.result); const workbook = XLSX.read(data, {type: 'array'}); const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]); resolve(jsonData); } catch (err) { reject(err); } }; reader.onerror = reject; reader.readAsArrayBuffer(file); }); }
     
+    function addWidgetToLayout(widget, customTitle = '') {
+        if (reportLayoutList.querySelector('.text-muted')) {
+            reportLayoutList.innerHTML = '';
+        }
+        const li = document.createElement('li');
+        li.className = 'list-group-item pdf-widget';
+        li.dataset.widgetId = widget.id;
+        li.innerHTML = `<div class="d-flex justify-content-between align-items-center"><span class="fw-bold">${widget.name}</span><button type="button" class="btn btn-sm btn-outline-danger" onclick="this.parentElement.parentElement.remove()">&times;</button></div><input type="text" class="form-control form-control-sm mt-2" value="${customTitle}" placeholder="Enter custom title (optional)">`;
+        reportLayoutList.appendChild(li);
+    }
+
     function populateAvailableWidgets() {
         availableWidgetsList.innerHTML = '';
         const allWidgets = [...availablePdfWidgets, ...currentCustomWidgets];
@@ -615,18 +648,84 @@ document.addEventListener('DOMContentLoaded', () => {
             const li = document.createElement('li');
             li.className = 'list-group-item d-flex justify-content-between align-items-center';
             li.textContent = widget.name;
-            // ... (rest of the function)
+            const btnGroup = document.createElement('div');
+            if (widget.type === 'custom_table') {
+                const deleteBtn = document.createElement('button');
+                deleteBtn.type = 'button';
+                deleteBtn.className = 'btn btn-sm btn-outline-danger me-1';
+                deleteBtn.innerHTML = '<i class="bi bi-trash"></i>';
+                deleteBtn.onclick = (e) => { e.stopPropagation(); currentCustomWidgets = currentCustomWidgets.filter(w => w.id !== widget.id); populateAvailableWidgets(); };
+                btnGroup.appendChild(deleteBtn);
+            }
+            const addBtn = document.createElement('button');
+            addBtn.type = 'button';
+            addBtn.className = 'btn btn-sm btn-outline-primary';
+            addBtn.innerHTML = '<i class="bi bi-plus"></i> Add';
+            addBtn.onclick = () => addWidgetToLayout(widget);
+            btnGroup.appendChild(addBtn);
+            li.appendChild(btnGroup);
             availableWidgetsList.appendChild(li);
         });
     }
 
-    function renderPdfLayout(config) {
+    function renderPdfLayout(pdfConfig) {
         reportLayoutList.innerHTML = '';
-        if (config?.sections?.length) {
-            // ... (logic to render layout)
+        pdfReportTitleInput.value = pdfConfig?.reportTitle || '';
+        if (pdfConfig?.sections?.length > 0) {
+            pdfConfig.sections.forEach(section => {
+                const allWidgets = [...availablePdfWidgets, ...currentCustomWidgets];
+                const baseWidget = allWidgets.find(w => w.id === section.id);
+                if (baseWidget) {
+                    addWidgetToLayout(baseWidget, section.title);
+                }
+            });
         } else {
             reportLayoutList.innerHTML = '<li class="list-group-item text-muted">Add widgets from the left.</li>';
         }
+    }
+    
+    function initializeWidgetCreator() {
+        const groupBySelect = document.getElementById('groupByColumn');
+        const metricColSelect = document.getElementById('metricColumn');
+        groupBySelect.innerHTML = '<option value="" disabled selected>Select a column...</option>';
+        metricColSelect.innerHTML = '<option value="" disabled selected>Select a column...</option>';
+        standardFields.filter(f => f.type === 'string' || f.type === 'date').forEach(field => {
+            groupBySelect.add(new Option(field.displayName, field.key));
+        });
+        standardFields.filter(f => f.type === 'number').forEach(field => {
+            metricColSelect.add(new Option(field.displayName, field.key));
+        });
+    }
+
+    function renderMappingUI() {
+        mappingHeader.innerHTML = `Map Your Fields to Detected Headers: <span class="badge bg-secondary">${detectedHeaders.length} columns found</span>`;
+        mappingAlert.classList.add('d-none');
+        mappingTableBody.innerHTML = '';
+        standardFields.forEach(field => {
+            const row = mappingTableBody.insertRow();
+            row.insertCell().innerHTML = `${field.displayName}${field.required ? ' <span class="text-danger">*</span>' : ''}`;
+            const cell2 = row.insertCell();
+            const select = document.createElement('select');
+            select.className = 'form-select form-select-sm';
+            select.dataset.standardKey = field.key;
+            select.add(new Option(field.required ? 'Select header...' : 'Optional', ''));
+            let bestGuess = '';
+            const savedMapping = mappingsForEditing[field.key];
+            if (savedMapping && detectedHeaders.includes(savedMapping)) {
+                bestGuess = savedMapping;
+            } else if (detectedHeaders.includes(field.displayName)) {
+                bestGuess = field.displayName;
+            } else if (detectedHeaders.includes(field.key)) {
+                bestGuess = field.key;
+            }
+            detectedHeaders.forEach(header => {
+                const option = new Option(header, header);
+                if (header === bestGuess) option.selected = true;
+                select.add(option);
+            });
+            cell2.appendChild(select);
+        });
+        mappingSection.style.display = 'block';
     }
 
     // --- REPORT BUILDER LOGIC ---
@@ -817,6 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     
     // Initial Load Call
+    initializeWidgetCreator();
     loadAllData();
 });
 </script>
