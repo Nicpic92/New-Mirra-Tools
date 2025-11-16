@@ -323,7 +323,8 @@ document.addEventListener('DOMContentLoaded', () => {
         selectors.forEach(sel => {
             const currentVal = sel.value; // Preserve selection if possible
             sel.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
-            state.allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id)));
+            // CORRECTED LINE: Added missing closing parenthesis
+            state.allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id))); 
             if (currentVal) sel.value = currentVal;
         });
     }
