@@ -34,6 +34,16 @@ const dom = {
     workQueueTableHead: document.getElementById('work-queue-table').querySelector('thead'),
 };
 
+/**
+ * Helper for consistent console logging.
+ * @param {string} level The log level (INFO, WARN, ERROR, ACTION, TRACE).
+ * @param {string} message The main log message.
+ * @param {object} details Optional object containing any relevant data.
+ */
+const logDiagnostic = (level, message, details = {}) => {
+    console.log(`[DASHBOARD-UI][${level}] ${message}`, details);
+};
+
 // --- CORE LOGIC FUNCTIONS ---
 
 /**
@@ -89,6 +99,7 @@ function getClaimCategory(claim) {
  * @returns {{claims: Array<object>, metrics: object}} Processed claims and aggregated metrics.
  */
 function analyzeAndProcessClaims(data) {
+    logDiagnostic('INFO', `Analyzing and processing ${data.length} raw claims.`);
     const metrics = { totalClaims: 0, totalNetPayment: 0, claimsByStatus: {}, providerCounts: {} };
     const actionableStates = ['PEND', 'ONHOLD', 'MANAGEMENTREVIEW'];
 
@@ -122,6 +133,8 @@ function analyzeAndProcessClaims(data) {
         }
         return processedClaim;
     });
+    
+    logDiagnostic('TRACE', `Claim analysis complete. Total Claims: ${metrics.totalClaims}.`);
 
     return { claims, metrics };
 }
@@ -148,6 +161,7 @@ function calculatePriorityScore(claim) {
  * Renders the main dashboard metrics and populates download buttons.
  */
 function renderDashboard() {
+    logDiagnostic('INFO', 'Rendering dashboard summary cards.');
     const { totalClaims, totalNetPayment, claimsByStatus } = state.aggregatedMetrics;
     const fNum = (num) => num.toLocaleString('en-US');
     const fCur = (num) => num.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
@@ -165,6 +179,7 @@ function renderDashboard() {
  * Populates the category filter dropdown based on actionable claims.
  */
 function populateCategoryFilter() {
+    logDiagnostic('INFO', 'Populating category filter.');
     const categories = [...new Set(state.allClaimsData.filter(c => c.isActionable).map(c => c.category))];
     dom.categoryFilter.innerHTML = '<option value="all" selected>All Actionable Categories</option>';
     categories.sort().forEach(cat => dom.categoryFilter.add(new Option(cat, cat)));
@@ -174,6 +189,7 @@ function populateCategoryFilter() {
  * Renders the work queue table with sorted and filtered data.
  */
 function renderWorkQueue() {
+    logDiagnostic('INFO', 'Rendering operational work queue.');
     const selectedCategory = dom.categoryFilter.value;
     let actionableClaims = state.allClaimsData.filter(c => c.isActionable && (selectedCategory === 'all' || c.category === selectedCategory));
 
@@ -212,6 +228,7 @@ function renderWorkQueue() {
  * Creates and displays download buttons for team and specialty reports.
  */
 function populateDownloadButtons() {
+    logDiagnostic('INFO', 'Populating download buttons.');
     const actionableClaims = state.allClaimsData.filter(c => c.isActionable);
     const teams = [...new Set(actionableClaims.map(c => c.team_name).filter(Boolean))];
 
@@ -242,6 +259,7 @@ function populateDownloadButtons() {
  * Fetches initial configurations and data required for the dashboard to function.
  */
 async function loadInitialData() {
+    logDiagnostic('INFO', 'Starting initial loadInitialData sequence.');
     try {
         const [configsRes, categoriesRes, reportsRes] = await Promise.all([
             fetch('/.netlify/functions/configurations'),
@@ -249,15 +267,25 @@ async function loadInitialData() {
             fetch('/.netlify/functions/team-report-configs')
         ]);
         if (!configsRes.ok || !categoriesRes.ok || !reportsRes.ok) {
+            logDiagnostic('ERROR', 'Failed to fetch initial dashboard data.', {
+                configsStatus: configsRes.status,
+                categoriesStatus: categoriesRes.status
+            });
             throw new Error('Failed to fetch initial dashboard data.');
         }
         state.allConfigs = await configsRes.json();
         state.allCategories = await categoriesRes.json();
         state.teamReportConfigs = await reportsRes.json();
         
+        logDiagnostic('SUCCESS', 'Initial configurations loaded.', {
+            configs: state.allConfigs.length,
+            categories: state.allCategories.length
+        });
+        
         dom.configSelector.innerHTML = '<option value="">Load a saved configuration...</option>';
         state.allConfigs.forEach(config => dom.configSelector.add(new Option(config.config_name, config.id)));
     } catch (error) {
+        logDiagnostic('FAILURE', 'Failed to load critical dashboard configurations.', { error: error.message });
         console.error('Error loading initial dashboard data:', error);
         alert('Failed to load critical dashboard configurations. Please refresh the page.');
     }
@@ -269,30 +297,43 @@ async function loadInitialData() {
  * @param {boolean} [isReprocessing=false] Flag indicating if we are reprocessing existing data.
  */
 function handleFile(event, isReprocessing = false) {
-    if (!isReprocessing && (!event || !event.target.files || !event.target.files[0])) return;
+    logDiagnostic('ACTION', `File handler invoked. Reprocessing: ${isReprocessing}`);
+    if (!isReprocessing && (!event || !event.target.files || !event.target.files[0])) {
+        logDiagnostic('WARN', 'No file selected or invalid input.');
+        return;
+    }
     if (!dom.configSelector.value) {
+        logDiagnostic('WARN', 'Configuration not selected. Aborting file load.');
         alert("Please select a report configuration first.");
         if (event) event.target.value = "";
         return;
     }
+
+    logDiagnostic('INFO', `Starting file processing with config ID: ${dom.configSelector.value}`);
 
     const processAndRender = (data) => {
         try {
             const processedData = analyzeAndProcessClaims(data);
             state.allClaimsData = processedData.claims;
             state.aggregatedMetrics = processedData.metrics;
+            logDiagnostic('SUCCESS', 'Claims processed and analyzed.', {
+                totalClaims: state.allClaimsData.length,
+                totalNetPayment: state.aggregatedMetrics.totalNetPayment
+            });
             renderDashboard();
             populateCategoryFilter();
             dom.providerReportFileInput.disabled = false;
             renderWorkQueue();
             dom.dashboardContent.style.display = 'block';
         } catch (error) {
+            logDiagnostic('ERROR', "An error occurred during file processing.", { error: error.message });
             console.error("An error occurred during file processing:", error);
             alert("Failed to process the file. Check console for details.");
         }
     };
 
     if (isReprocessing) {
+        logDiagnostic('INFO', 'Reprocessing existing data with new configuration/rules.');
         // Reprocess using the 'original' raw data stored in each claim object
         processAndRender(state.allClaimsData.map(c => c.original));
         return;
@@ -301,17 +342,21 @@ function handleFile(event, isReprocessing = false) {
     const file = event.target.files[0];
     const reader = new FileReader();
     reader.onload = (e) => {
+        logDiagnostic('TRACE', 'File read successful. Starting XLSX parsing.');
         try {
             const data = new Uint8Array(e.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
             const jsonData = XLSX.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
+            logDiagnostic('SUCCESS', `XLSX file parsed. Found ${jsonData.length} records.`);
             processAndRender(jsonData);
         } catch (readError) {
+             logDiagnostic('ERROR', "Error reading or parsing the XLSX file.", { error: readError.message });
              console.error("Error reading or parsing the XLSX file:", readError);
              alert("Could not read the file. Please ensure it is a valid XLSX file.");
         }
     };
     reader.onerror = () => {
+        logDiagnostic('ERROR', "FileReader error on selected file.");
         console.error("FileReader error.");
         alert("There was an error reading the selected file.");
     };
@@ -323,6 +368,7 @@ function handleFile(event, isReprocessing = false) {
  * @param {Event} event The file input change event.
  */
 function handleProviderFile(event) {
+    logDiagnostic('ACTION', 'Provider Verification file selected. Starting merge process.');
     const file = event.target.files[0];
     if (!file || state.allClaimsData.length === 0) return;
 
@@ -340,6 +386,7 @@ function handleProviderFile(event) {
             
             const claimIdKey = findHeader(['claim id', 'claimid', 'claim number']);
             if (!claimIdKey) {
+                logDiagnostic('WARN', "Could not find 'Claim ID' column in PV report.");
                 alert("Could not find a 'Claim ID' column in the Provider Verification report.");
                 return;
             }
@@ -364,6 +411,8 @@ function handleProviderFile(event) {
                     Object.assign(claim, providerInfo);
                 }
             });
+            
+            logDiagnostic('INFO', `Mapping TIN status for W9 existence.`);
 
             if (state.currentColumnMappings.billingProviderTaxId) {
                 const tinStatusMap = new Map();
@@ -380,13 +429,16 @@ function handleProviderFile(event) {
             }
 
             renderWorkQueue();
+            logDiagnostic('SUCCESS', `Successfully merged data from ${providerMap.size} provider verification records.`);
             alert(`Successfully merged data from ${providerMap.size} provider verification records.`);
         } catch (readError) {
+             logDiagnostic('ERROR', "Error reading or parsing the provider verification file.", { error: readError.message });
              console.error("Error reading or parsing the provider verification file:", readError);
              alert("Could not read the provider file. Please ensure it is a valid XLSX file.");
         }
     };
      reader.onerror = () => {
+        logDiagnostic('ERROR', "FileReader error on provider file.");
         console.error("FileReader error on provider file.");
         alert("There was an error reading the provider verification file.");
     };
@@ -402,6 +454,7 @@ function handleProviderFile(event) {
  */
 async function onConfigChange(e) {
     const selectedId = e.target.value;
+    logDiagnostic('ACTION', `Configuration changed to ID: ${selectedId || 'None'}`);
     const selectedConfig = state.allConfigs.find(c => c.id == selectedId);
     state.clientRules = { editRules: [], noteRules: [] };
     
@@ -417,13 +470,16 @@ async function onConfigChange(e) {
             if (!editRes.ok || !noteRes.ok) throw new Error('Failed to fetch rules.');
             state.clientRules.editRules = await editRes.json();
             state.clientRules.noteRules = await noteRes.json();
+            logDiagnostic('SUCCESS', `Client-specific rules loaded. ${state.clientRules.editRules.length} edits, ${state.clientRules.noteRules.length} notes.`);
         } catch (error) {
+            logDiagnostic('ERROR', 'Error loading client-specific rules.', { error: error.message });
             console.error('Error loading client-specific rules:', error);
             alert('Could not load categorization rules. Categorization may be incorrect.');
         }
         
         // If data is already loaded, re-process it with the new rules
         if (state.allClaimsData.length > 0) {
+            logDiagnostic('INFO', 'Claims data present. Triggering reprocessing.');
             handleFile(null, true);
         }
     } else {
@@ -446,6 +502,7 @@ function onSortTable(e) {
             state.currentSort.column = sortKey;
             state.currentSort.direction = 'desc';
         }
+        logDiagnostic('INFO', `Sorting work queue by ${state.currentSort.column} (${state.currentSort.direction}).`);
         renderWorkQueue();
     }
 }
@@ -456,19 +513,24 @@ function onSortTable(e) {
  * Sets up all event listeners for the page.
  */
 function initializeEventListeners() {
+    logDiagnostic('INFO', 'Initializing event listeners.');
     dom.configSelector.addEventListener('change', onConfigChange);
     dom.reportFileInput.addEventListener('change', (e) => handleFile(e, false));
     dom.providerReportFileInput.addEventListener('change', handleProviderFile);
-    dom.generatePdfBtn.addEventListener('click', () => alert('PDF generation is a complex feature and is stubbed out for this example.'));
+    dom.generatePdfBtn.addEventListener('click', () => logDiagnostic('ACTION', 'PDF button clicked (Feature stubbed).'));
     dom.workQueueTableHead.addEventListener('click', onSortTable);
-    dom.categoryFilter.addEventListener('change', () => renderWorkQueue());
+    dom.categoryFilter.addEventListener('change', () => { logDiagnostic('ACTION', `Filter changed to: ${dom.categoryFilter.value}`); renderWorkQueue(); });
 }
 
 // --- REPORT DOWNLOAD FUNCTIONS (Remain Largely Unchanged) ---
 
 function downloadTeamReport(teamName, allActionableClaims) {
+    logDiagnostic('ACTION', `Starting download for team: ${teamName}`);
     const teamClaims = allActionableClaims.filter(c => c.team_name === teamName);
-    if (teamClaims.length === 0) return alert(`No claims for team: ${teamName}`);
+    if (teamClaims.length === 0) {
+        logDiagnostic('WARN', `Download aborted: No claims for team: ${teamName}`);
+        return alert(`No claims for team: ${teamName}`);
+    }
     const wb = XLSX.utils.book_new();
     const today = new Date().toISOString().slice(0, 10);
     const standardFieldMap = new Map(standardFields.map(f => [f.key, f.displayName]));
@@ -492,6 +554,7 @@ function downloadTeamReport(teamName, allActionableClaims) {
                 const { dataColumns = [], metrics = [], groupBy = [], sourceConfigId } = customReportConfig.report_config_data;
                 const sourceConfig = state.allConfigs.find(c => c.id == sourceConfigId);
                 if (!sourceConfig) {
+                    logDiagnostic('WARN', `Report aborted: Could not find Source Config ID ${sourceConfigId} for key ${key}.`);
                     reportData = claimsInGroup.map(claim => ({ ...claim.original, 'ERROR': `Could not find Source Config ID ${sourceConfigId}` }));
                 } else {
                     const reportMappings = sourceConfig.config_data.columnMappings;
@@ -549,12 +612,15 @@ function downloadTeamReport(teamName, allActionableClaims) {
         const clientName = dom.clientNameInput.value.trim().replace(/ /g, '_') || 'Client';
         const safeTeamName = teamName.replace(/ /g, '_');
         XLSX.writeFile(wb, `${clientName}_${safeTeamName}_Report_${today}.xlsx`);
+        logDiagnostic('SUCCESS', `Team report created with ${wb.SheetNames.length} sheets.`);
     } else {
+        logDiagnostic('WARN', `Download aborted: No data available to generate a report for team: ${teamName}`);
         alert(`No data available to generate a report for team: ${teamName}`);
     }
 }
 
 function downloadL1MonitorReport(l1Claims) {
+    logDiagnostic('ACTION', `Starting download for L1 Monitor Report (${l1Claims.length} claims).`);
     const today = new Date().toISOString().slice(0, 10);
     const clientName = dom.clientNameInput.value.trim().replace(/ /g, '_') || 'Client';
     const reportData = l1Claims.map(claim => ({
@@ -567,6 +633,7 @@ function downloadL1MonitorReport(l1Claims) {
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'L1 Monitor Items');
     XLSX.writeFile(wb, `${clientName}_L1_Monitor_Report_${today}.xlsx`);
+    logDiagnostic('SUCCESS', 'L1 Monitor report generated and downloaded.');
 }
 
 // --- App Entry Point ---
