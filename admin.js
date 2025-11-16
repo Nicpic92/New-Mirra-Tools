@@ -182,6 +182,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderCategoryList();
             renderConfigList();
             populateConfigSelectors();
+            populateAvailableWidgets(); // <--- ADDED: Populate the available PDF widgets
             
             // Re-enable selectors.
             dom.clientRuleFilter.disabled = false;
@@ -493,6 +494,83 @@ document.addEventListener('DOMContentLoaded', () => {
         return select;
     }
     
+    /**
+     * Renders the list of hardcoded and custom PDF widgets into the available list.
+     * This needs to run when the page loads and when a custom widget is saved.
+     */
+    function populateAvailableWidgets() {
+        dom.availableWidgetsList.innerHTML = '';
+        
+        // 1. Hardcoded widgets
+        availablePdfWidgets.forEach(widget => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item pdf-widget';
+            li.dataset.widgetId = widget.id;
+            li.dataset.widgetType = widget.type;
+            li.textContent = widget.name;
+            dom.availableWidgetsList.appendChild(li);
+        });
+
+        // 2. Custom widgets
+        state.currentCustomWidgets.forEach(widget => {
+            const li = document.createElement('li');
+            li.className = 'list-group-item pdf-widget list-group-item-warning'; // Highlight custom ones
+            li.dataset.widgetId = widget.id;
+            li.dataset.widgetType = widget.type;
+            li.textContent = `${widget.name} (Custom)`;
+            dom.availableWidgetsList.appendChild(li);
+        });
+        
+        // TODO: Implement drag/drop for ordering
+    }
+    
+    /**
+     * Renders the saved PDF layout for a given configuration into the Report Layout list.
+     * @param {object} pdfConfig The pdfConfig object from the client configuration.
+     */
+    function renderPdfLayout(pdfConfig) {
+        dom.reportLayoutList.innerHTML = '';
+        const layout = pdfConfig?.layout || [];
+        const title = pdfConfig?.pdfReportTitle || '{clientName} Daily Summary Report {date}';
+
+        dom.pdfReportTitleInput.value = title;
+
+        if (layout.length === 0) {
+            dom.reportLayoutList.innerHTML = '<li class="list-group-item text-muted">Add widgets from the left.</li>';
+            return;
+        }
+
+        // Combine standard and custom widgets for easy lookup
+        const allWidgets = [...availablePdfWidgets, ...state.currentCustomWidgets];
+        const widgetMap = new Map(allWidgets.map(w => [w.id, w]));
+
+        layout.forEach(widgetId => {
+            const widget = widgetMap.get(widgetId);
+            if (widget) {
+                const li = document.createElement('li');
+                li.className = `list-group-item pdf-widget ${widget.id.startsWith('custom_') ? 'list-group-item-warning' : ''}`;
+                li.dataset.widgetId = widget.id;
+                li.textContent = widget.name;
+                // Add a removal button
+                li.innerHTML += ` <button type="button" class="btn btn-sm btn-outline-danger py-0 px-1 float-end remove-widget-btn" data-widget-id="${widget.id}">&times;</button>`;
+                dom.reportLayoutList.appendChild(li);
+            }
+        });
+        
+        // Attach removal handler
+        dom.reportLayoutList.querySelectorAll('.remove-widget-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.target.closest('li').remove();
+                if (dom.reportLayoutList.children.length === 0) {
+                     dom.reportLayoutList.innerHTML = '<li class="list-group-item text-muted">Add widgets from the left.</li>';
+                }
+            });
+        });
+        
+        // TODO: Implement drag/drop for ordering
+    }
+    
     function clearConfigForm() {
         dom.configForm.reset();
         dom.configIdInput.value = '';
@@ -501,7 +579,7 @@ document.addEventListener('DOMContentLoaded', () => {
         state.mappingsForEditing = {};
         dom.reportUploader.value = '';
         state.currentCustomWidgets = [];
-        // Future: renderPdfLayout({});
+        renderPdfLayout({}); // <--- MODIFIED
     }
 
     // --- BUSINESS LOGIC & DATA PROCESSING ---
@@ -516,8 +594,8 @@ document.addEventListener('DOMContentLoaded', () => {
         state.mappingsForEditing = { ...(config.config_data.columnMappings || {}) };
         state.currentCustomWidgets = config.config_data.pdfConfig?.customWidgets || [];
         renderMappingsFromObject(state.mappingsForEditing);
-        // Future: populateAvailableWidgets();
-        // Future: renderPdfLayout(config.config_data.pdfConfig);
+        populateAvailableWidgets(); // <--- MODIFIED
+        renderPdfLayout(config.config_data.pdfConfig); // <--- MODIFIED
     }
 
     async function deleteConfig(id) {
