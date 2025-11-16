@@ -36,6 +36,17 @@ document.addEventListener('DOMContentLoaded', () => {
         saveReportLayoutBtn: document.getElementById('saveReportLayoutBtn'),
         deleteReportLayoutBtn: document.getElementById('deleteReportLayoutBtn'),
     };
+    
+    /**
+     * Helper for consistent console logging.
+     * @param {string} level The log level (INFO, WARN, ERROR, ACTION, TRACE).
+     * @param {string} message The main log message.
+     * @param {object} details Optional object containing any relevant data.
+     */
+    const logDiagnostic = (level, message, details = {}) => {
+        console.log(`[REPORTS-UI][${level}] ${message}`, details);
+    };
+
 
     // --- DATA LOADING ---
 
@@ -45,11 +56,15 @@ document.addEventListener('DOMContentLoaded', () => {
      * @returns {Promise<any>} The JSON response from the API.
      */
     async function apiCall(url) {
+        const endpoint = url.split('/.netlify/functions/')[1];
+        logDiagnostic('TRACE', `Attempting API fetch for: ${endpoint}`);
         try {
             const response = await fetch(url);
             if (!response.ok) {
+                logDiagnostic('ERROR', `API call to ${endpoint} failed with status ${response.status}`);
                 throw new Error(`API call to ${url} failed with status ${response.status}`);
             }
+            logDiagnostic('SUCCESS', `Fetch successful for: ${endpoint}`);
             return response.json();
         } catch (error) {
             console.error(error);
@@ -62,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * Loads all initial data required for the report builder page to function.
      */
     async function loadAllData() {
+        logDiagnostic('INFO', 'Starting initial loadAllData sequence.');
         try {
             const [teams, categories, configs, teamReports] = await Promise.all([
                 apiCall(API.TEAMS),
@@ -75,6 +91,13 @@ document.addEventListener('DOMContentLoaded', () => {
             state.allClientConfigs = configs;
             state.allTeamReportConfigs = teamReports;
             
+            logDiagnostic('INFO', 'Data load complete.', {
+                teams: state.allTeams.length,
+                categories: state.allCategories.length,
+                configs: state.allClientConfigs.length,
+                reportConfigs: state.allTeamReportConfigs.length
+            });
+
             // Populate the initial dropdowns
             populateTeamSelector();
             populateConfigSelector();
@@ -82,11 +105,13 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch (error) {
             console.error("Failed to load initial report builder data:", error);
         }
+        logDiagnostic('INFO', 'loadAllData sequence finished.');
     }
 
     // --- UI RENDERING & LOGIC ---
 
     function populateTeamSelector() {
+        logDiagnostic('INFO', 'Populating team selector.');
         dom.reportBuilderTeam.innerHTML = '<option value="">Select a team...</option>';
         state.allTeams
             .sort((a, b) => a.team_name.localeCompare(b.team_name))
@@ -96,6 +121,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function populateConfigSelector() {
+        logDiagnostic('INFO', 'Populating config selector.');
         dom.columnSourceConfig.innerHTML = '<option value="">Select a config...</option>';
         state.allClientConfigs
             .sort((a, b) => a.config_name.localeCompare(b.config_name))
@@ -108,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * Populates the checkbox lists for columns and metrics based on the selected source config.
      */
     function populateBuilderCheckboxes() {
+        logDiagnostic('INFO', 'Populating builder checkboxes based on selected source config.');
         const configId = dom.columnSourceConfig.value;
         const selectedConfig = state.allClientConfigs.find(c => c.id == configId);
         
@@ -116,13 +143,17 @@ document.addEventListener('DOMContentLoaded', () => {
             container.innerHTML = '<p class="text-muted small p-2">Select a client configuration to see available options.</p>';
         });
 
-        if (!selectedConfig || !selectedConfig.config_data.columnMappings) return;
+        if (!selectedConfig || !selectedConfig.config_data.columnMappings) {
+            logDiagnostic('WARN', 'No valid source config selected. Checkboxes not populated.');
+            return;
+        }
 
         [dom.reportDataColumns, dom.reportMetrics, dom.reportGroupByColumns].forEach(c => c.innerHTML = '');
 
         const mappedKeys = new Set(Object.keys(selectedConfig.config_data.columnMappings));
         
         // Populate "Data Columns"
+        let dataColCount = 0;
         standardFields.forEach(field => {
             if (mappedKeys.has(field.key)) {
                 const div = document.createElement('div');
@@ -130,10 +161,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 div.innerHTML = `<input class="form-check-input data-column-checkbox" type="checkbox" value="${field.key}" id="col_${field.key}">
                                  <label class="form-check-label" for="col_${field.key}">${field.displayName}</label>`;
                 dom.reportDataColumns.appendChild(div);
+                dataColCount++;
             }
         });
 
         // Populate "Metrics"
+        let metricCount = 0;
         availableMetrics.forEach(metric => {
             const hasRequiredCols = metric.required.every(key => mappedKeys.has(key));
             if (hasRequiredCols) {
@@ -142,8 +175,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 div.innerHTML = `<input class="form-check-input" type="checkbox" value="${metric.key}" id="met_${metric.key}">
                                  <label class="form-check-label" for="met_${metric.key}">${metric.displayName}</label>`;
                 dom.reportMetrics.appendChild(div);
+                metricCount++;
             }
         });
+        
+        logDiagnostic('INFO', `Populated ${dataColCount} data columns and ${metricCount} metrics.`);
         
         // Add event listener to dynamically update the "Group By" options
         dom.reportDataColumns.addEventListener('change', updateGroupByOptions);
@@ -153,6 +189,7 @@ document.addEventListener('DOMContentLoaded', () => {
      * Updates the "Group By" checkbox list based on which data columns are selected.
      */
     function updateGroupByOptions() {
+        logDiagnostic('TRACE', 'Updating group by options based on selected data columns.');
         const selectedDataColumns = Array.from(dom.reportDataColumns.querySelectorAll('input:checked'));
         const previouslySelectedGroups = new Set(
             Array.from(dom.reportGroupByColumns.querySelectorAll('input:checked')).map(cb => cb.value)
@@ -176,6 +213,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 dom.reportGroupByColumns.appendChild(div);
             }
         });
+        logDiagnostic('TRACE', `Rendered ${selectedDataColumns.length} potential group-by options.`);
     }
 
     /**
@@ -184,6 +222,7 @@ document.addEventListener('DOMContentLoaded', () => {
     function loadExistingReportConfig() {
         const teamId = dom.reportBuilderTeam.value;
         const categoryId = dom.reportBuilderCategory.value;
+        logDiagnostic('ACTION', `Loading existing config for Team ID: ${teamId}, Category ID: ${categoryId}`);
 
         // Reset the form and hide the builder
         dom.builderContainer.classList.add('d-none');
@@ -204,6 +243,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const existingConfig = state.allTeamReportConfigs.find(c => c.team_id == teamId && c.category_id == categoryId);
         
         if (existingConfig) {
+            logDiagnostic('SUCCESS', `Found existing report config ID: ${existingConfig.id}`);
             const layout = existingConfig.report_config_data;
             dom.teamReportConfigIdInput.value = existingConfig.id;
             dom.teamReportTitleInput.value = layout.reportTitle || '';
@@ -235,6 +275,7 @@ document.addEventListener('DOMContentLoaded', () => {
             
             dom.deleteReportLayoutBtn.disabled = false;
         } else {
+            logDiagnostic('INFO', 'No existing report config found. Initializing empty builder.');
             // No existing config, so just clear and populate the checkboxes
             dom.columnSourceConfig.value = '';
             populateBuilderCheckboxes();
@@ -246,28 +287,35 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- EVENT HANDLERS ---
 
     async function handleSaveLayout() {
+        logDiagnostic('ACTION', 'Attempting to save report layout.');
         const teamId = dom.reportBuilderTeam.value;
         const categoryId = dom.reportBuilderCategory.value;
         const configId = dom.teamReportConfigIdInput.value;
         const sourceConfigId = dom.columnSourceConfig.value;
 
         if (!teamId || !categoryId || !sourceConfigId) {
+            logDiagnostic('WARN', 'Validation failed: Missing team, category, or source config.');
             return alert('A team, category, and source client configuration must be selected.');
         }
 
         const selectedDataColumns = Array.from(dom.reportDataColumns.querySelectorAll('input:checked')).map(cb => cb.value);
         const selectedMetrics = Array.from(dom.reportMetrics.querySelectorAll('input:checked')).map(cb => cb.value);
         const selectedGroupBy = Array.from(dom.reportGroupByColumns.querySelectorAll('input:checked')).map(cb => cb.value);
-
+        
+        // --- Validation Checks ---
         if (selectedDataColumns.length === 0 && selectedMetrics.length === 0) {
+            logDiagnostic('WARN', 'Validation failed: No columns or metrics selected.');
             return alert('Please select at least one data column or metric for the report.');
         }
-        if (selectedGroupBy.length === 0 && selectedMetrics.length > 0) {
+        if (selectedMetrics.length > 0 && selectedGroupBy.length === 0) {
+            logDiagnostic('WARN', 'Validation failed: Metrics selected but no Group By column specified.');
             return alert('You must select at least one "Group By" column when including metrics to generate an aggregated report.');
         }
-        if (selectedGroupBy.length > 0 && selectedDataColumns.length === 0) {
+        if (selectedGroupBy.some(col => !selectedDataColumns.includes(col))) {
+             logDiagnostic('WARN', 'Validation failed: Group By columns not included in Data Columns.');
              return alert('You cannot group by columns that are not selected in the "Data Columns" section.');
         }
+        // -------------------------
 
         const report_config_data = {
             sourceConfigId: sourceConfigId,
@@ -279,6 +327,8 @@ document.addEventListener('DOMContentLoaded', () => {
         
         const method = configId ? 'PUT' : 'POST';
         const url = configId ? `${API.TEAM_REPORTS}?id=${configId}` : API.TEAM_REPORTS;
+
+        logDiagnostic('INFO', `Report layout validated. Sending ${method} request.`, { payload: report_config_data });
         
         try {
             await fetch(url, {
@@ -287,12 +337,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 body: JSON.stringify({ team_id: parseInt(teamId), category_id: parseInt(categoryId), report_config_data })
             });
             
+            logDiagnostic('SUCCESS', 'Report layout saved/updated successfully. Refreshing config list.');
             alert('Team report layout saved successfully!');
             // Refresh the list of configs from the server
             state.allTeamReportConfigs = await apiCall(API.TEAM_REPORTS);
             loadExistingReportConfig(); // Reload the form with the latest data
 
         } catch (error) {
+            logDiagnostic('ERROR', 'Failed to save team report layout.', { error: error.message });
             console.error('Failed to save team report layout:', error);
             alert(`Failed to save layout: ${error.message}`);
         }
@@ -300,10 +352,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     async function handleDeleteLayout() {
         const configId = dom.teamReportConfigIdInput.value;
+        logDiagnostic('ACTION', `Attempting to delete report layout ID: ${configId}`);
         if (!configId || !confirm('Are you sure you want to delete this report layout? This cannot be undone.')) return;
         
         try {
             await fetch(`${API.TEAM_REPORTS}?id=${configId}`, { method: 'DELETE' });
+            logDiagnostic('SUCCESS', `Report layout ID ${configId} deleted.`);
             alert('Report layout deleted successfully.');
             
             // Refresh the list of configs and reload the form
@@ -311,6 +365,7 @@ document.addEventListener('DOMContentLoaded', () => {
             loadExistingReportConfig();
 
         } catch (error) {
+            logDiagnostic('ERROR', 'Failed to delete team report layout.', { error: error.message });
             console.error('Failed to delete team report layout:', error);
             alert(`Failed to delete layout: ${error.message}`);
         }
@@ -318,6 +373,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function handleTeamChange() {
         const teamId = parseInt(dom.reportBuilderTeam.value, 10);
+        logDiagnostic('ACTION', `Team selection changed to ID: ${teamId || 'None'}`);
         
         // Reset and disable subsequent dropdowns and the builder form
         dom.builderContainer.classList.add('d-none');
@@ -332,10 +388,12 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.reportBuilderCategory.add(new Option(cat.category_name, cat.id));
         });
         dom.reportBuilderCategory.disabled = false;
+        logDiagnostic('INFO', `Populated ${categoriesForTeam.length} categories for the selected team.`);
     }
 
     // --- INITIALIZATION ---
     function initializeEventListeners() {
+        logDiagnostic('INFO', 'Initializing event listeners.');
         dom.reportBuilderTeam.addEventListener('change', handleTeamChange);
         dom.reportBuilderCategory.addEventListener('change', loadExistingReportConfig);
         dom.columnSourceConfig.addEventListener('change', () => {
