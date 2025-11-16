@@ -1097,4 +1097,26 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             try {
                 await Promise.all([
-                    newEditRules.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${targetConfigId
+                    newEditRules.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${targetConfigId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newEditRules) }) : Promise.resolve(),
+                    newNoteRules.length > 0 ? apiCall(`${API.RULES}?type=note&config_id=${targetConfigId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newNoteRules) }) : Promise.resolve()
+                ]);
+                alert(`Successfully copied ${newEditRules.length} edit rule(s) and ${newNoteRules.length} note rule(s).`);
+                dom.copyRulesModal.hide();
+                await loadRulesForConfig(targetConfigId);
+                renderExistingRulesTables(state.activeEditRules, state.activeNoteRules);
+            } catch (error) {
+                alert(`An error occurred while copying rules: ${error.message}`);
+            }
+        });
+
+        dom.triageMrw9Uploader.addEventListener('change', handleTriageMRW9File);
+        dom.generateAssignmentReportsBtn.addEventListener('click', generateTriageReports);
+        
+        // PDF Widget logic could be initialized here if used
+    }
+
+    // --- APPLICATION STARTUP ---
+    initializeEventListeners();
+    loadAllData();
+});
+// --- END OF FILE admin.js ---
