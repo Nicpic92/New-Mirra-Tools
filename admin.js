@@ -178,24 +178,27 @@ document.addEventListener('DOMContentLoaded', () => {
             dom.clientTeamConfigSelector.disabled = true;
 
             // Use safeApiCall to ensure one failed fetch does not block the entire page from loading.
+            // All API calls succeed, but clientTeams returns an array of IDs, not objects.
             const [teams, categories, configs, clientTeams] = await Promise.all([
                 safeApiCall(API.TEAMS),
                 safeApiCall(API.CATEGORIES),
                 safeApiCall(API.CONFIG),
-                safeApiCall(API.CLIENT_TEAM)
+                safeApiCall(API.CLIENT_TEAM) // This returns array of IDs: [1, 5]
             ]);
             
-            // FIX: Defensive assignment using Array.isArray check to prevent the TypeError
+            // FIX: Ensure assignment uses Array.isArray and treat clientTeams as an ID array
             state.allTeams = Array.isArray(teams) ? teams : [];
             state.allCategories = Array.isArray(categories) ? categories : [];
             state.allClientConfigs = Array.isArray(configs) ? configs : [];
+            // Treat clientTeams as an ID array—the original code failed here by assuming it was an array of objects with a length property
             state.allClientTeamAssociations = Array.isArray(clientTeams) ? clientTeams : [];
             
             // Log final counts for diagnostic purposes
             logDiagnostic('INFO', 'Core data retrieval complete.', {
                 teams: state.allTeams.length,
                 categories: state.allCategories.length,
-                configs: state.allClientConfigs.length
+                configs: state.allClientConfigs.length,
+                clientTeamsAssocCount: state.allClientTeamAssociations.length // Log this explicit count
             });
 
             // Re-render all UI components that depend on this data.
