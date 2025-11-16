@@ -26,6 +26,11 @@ exports.handler = async function(event) {
             case 'GET':
                 {
                     const result = await pool.query('SELECT * FROM teams ORDER BY team_name;');
+                    
+                    // DIAGNOSTIC LOG ADDED HERE:
+                    log('INFO', functionName, `DB Query returned ${result.rows.length} rows for teams.`, { rowCount: result.rows.length });
+                    // END DIAGNOSTIC LOG
+                    
                     return {
                         statusCode: 200,
                         body: JSON.stringify(result.rows)
