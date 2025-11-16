@@ -4,3 +4,7 @@
 
   # This tells Netlify where your serverless functions are.
   functions = "netlify/functions"
+
+  # FIX: Add the required DATABASE_URL environment variable for Netlify Functions (database.js)
+  [build.environment]
+    DATABASE_URL = "placeholder_replace_with_your_db_connection_string"
