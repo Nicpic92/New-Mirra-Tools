@@ -17,6 +17,11 @@ exports.handler = async function(event) {
         switch (event.httpMethod) {
             case 'GET': {
                 const result = await pool.query('SELECT id, config_name, config_data FROM column_configurations ORDER BY config_name;');
+                
+                // DIAGNOSTIC LOG ADDED HERE:
+                log('INFO', functionName, `DB Query returned ${result.rows.length} rows for configurations.`, { rowCount: result.rows.length });
+                // END DIAGNOSTIC LOG
+
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
