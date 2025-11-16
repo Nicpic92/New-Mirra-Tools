@@ -26,6 +26,11 @@ exports.handler = async function(event) {
                     ORDER BY c.category_name;
                 `;
                 const result = await pool.query(sql);
+                
+                // DIAGNOSTIC LOG ADDED HERE:
+                log('INFO', functionName, `DB Query returned ${result.rows.length} rows for categories.`, { rowCount: result.rows.length });
+                // END DIAGNOSTIC LOG
+                
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
             }
             case 'POST': {
