@@ -16,12 +16,14 @@ exports.handler = async function(event) {
 
         switch (event.httpMethod) {
             case 'GET': {
-                // TEMPORARY FIX: We are fetching only from claim_categories to isolate 
-                // the bug. The problematic LEFT JOIN has been removed.
+                // FIX: Reverting the temporary fix and implementing the necessary LEFT JOIN 
+                // to correctly fetch the team_name, which is required by the frontend 
+                // for correct grouping and display.
                 const sql = `
-                    SELECT id, category_name, team_id, send_to_l1_monitor
-                    FROM claim_categories
-                    ORDER BY category_name;
+                    SELECT c.id, c.category_name, c.team_id, c.send_to_l1_monitor, t.team_name
+                    FROM claim_categories c
+                    LEFT JOIN teams t ON c.team_id = t.id
+                    ORDER BY c.category_name;
                 `;
                 const result = await pool.query(sql);
                 return { statusCode: 200, body: JSON.stringify(result.rows) };
