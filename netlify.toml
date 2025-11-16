@@ -7,4 +7,4 @@
 
   # FIX: Add the required DATABASE_URL environment variable for Netlify Functions (database.js)
   [build.environment]
-    DATABASE_URL = "placeholder_replace_with_your_db_connection_string"
+    DATABASE_URL = "postgresql://neondb_owner:npg_0yIOl9febrTw@ep-dry-morning-adubna5a-pooler.c-2.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require"
