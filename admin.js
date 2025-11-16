@@ -323,7 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectors.forEach(sel => {
             const currentVal = sel.value; // Preserve selection if possible
             sel.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
-            state.allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id)));
+            state.allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id));
             if (currentVal) sel.value = currentVal;
         });
     }
@@ -793,7 +793,7 @@ document.addEventListener('DOMContentLoaded', () => {
             ]);
             logDiagnostic('SUCCESS', 'Existing rule changes saved successfully!');
             alert('Existing rule changes saved successfully!');
-            await loadRulesForConfig(configId);
+            await loadAllData();
             renderExistingRulesTables(state.activeEditRules, state.activeNoteRules);
         } catch (error) {
             logDiagnostic('ERROR', `Error saving existing rule changes.`, { error: error.message });
