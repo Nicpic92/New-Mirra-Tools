@@ -828,6 +828,24 @@ document.addEventListener('DOMContentLoaded', () => {
         if (generatedCount === 0) alert("No claims were available to generate reports.");
         else alert("Assignment reports generated successfully.");
     }
+
+    /**
+     * Extracts the current PDF report layout from the DOM and state into an object for storage.
+     * @returns {object} The serialized PDF configuration.
+     */
+    function serializePdfLayout() {
+        // Collect widget IDs from the Report Layout list, ensuring the placeholder li is ignored.
+        const layout = Array.from(dom.reportLayoutList.children)
+            .filter(li => li.dataset.widgetId) 
+            .map(li => li.dataset.widgetId);
+
+        return {
+            pdfReportTitle: dom.pdfReportTitleInput.value.trim(),
+            layout: layout,
+            // Custom widgets must be stored alongside the config to be available when it's reloaded.
+            customWidgets: state.currentCustomWidgets,
+        };
+    }
     
     // --- EVENT HANDLER SETUP ---
 
@@ -849,8 +867,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (sel.value) columnMappings[sel.dataset.standardKey] = sel.value;
             });
             const id = dom.configIdInput.value;
-            // const pdfConfig = serializePdfLayout(); // Assumes function exists
-            let config_data = { clientName: dom.clientNameInput.value, columnMappings /*, pdfConfig*/ };
+            
+            // FIX: Serialize the PDF layout and include it in config_data
+            const pdfConfig = serializePdfLayout(); 
+            let config_data = { clientName: dom.clientNameInput.value, columnMappings, pdfConfig };
+            
             if (id) {
                 const existingConfig = state.allClientConfigs.find(c => c.id == id);
                 if (existingConfig?.config_data?.teamReportLayouts) {
@@ -1076,26 +1097,4 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             try {
                 await Promise.all([
-                    newEditRules.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${targetConfigId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newEditRules) }) : Promise.resolve(),
-                    newNoteRules.length > 0 ? apiCall(`${API.RULES}?type=note&config_id=${targetConfigId}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(newNoteRules) }) : Promise.resolve()
-                ]);
-                alert(`Successfully copied ${newEditRules.length} edit rule(s) and ${newNoteRules.length} note rule(s).`);
-                dom.copyRulesModal.hide();
-                await loadRulesForConfig(targetConfigId);
-                renderExistingRulesTables(state.activeEditRules, state.activeNoteRules);
-            } catch (error) {
-                alert(`An error occurred while copying rules: ${error.message}`);
-            }
-        });
-
-        dom.triageMrw9Uploader.addEventListener('change', handleTriageMRW9File);
-        dom.generateAssignmentReportsBtn.addEventListener('click', generateTriageReports);
-        
-        // PDF Widget logic could be initialized here if used
-    }
-
-    // --- APPLICATION STARTUP ---
-    initializeEventListeners();
-    loadAllData();
-});
-// --- END OF FILE admin.js ---
+                    newEditRules.length > 0 ? apiCall(`${API.RULES}?type=edit&config_id=${targetConfigId
