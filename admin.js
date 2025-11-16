@@ -205,7 +205,7 @@ document.addEventListener('DOMContentLoaded', () => {
             renderTeamList();
             populateTeamDropdown();
             renderCategoryList();
-            renderConfigList();
+            renderConfigList(); // This is the function that populates the config list!
             populateConfigSelectors();
             populateAvailableWidgets(); // <--- ADDED: Populate the available PDF widgets
             
@@ -323,8 +323,7 @@ document.addEventListener('DOMContentLoaded', () => {
         selectors.forEach(sel => {
             const currentVal = sel.value; // Preserve selection if possible
             sel.innerHTML = '<option selected disabled value="">Select a configuration...</option>';
-            // CORRECTED LINE: Added missing closing parenthesis
-            state.allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id))); 
+            state.allClientConfigs.forEach(config => sel.add(new Option(config.config_name, config.id)));
             if (currentVal) sel.value = currentVal;
         });
     }
