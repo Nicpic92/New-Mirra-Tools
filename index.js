@@ -196,14 +196,11 @@ function renderWorkQueue() {
             <td>${claim.category || 'N/A'}</td>
             <td>${claim.source || 'N/A'}</td>
             <td>${claim.team_name || 'N/A'}</td>
-            <td></td> <!-- Prov Ops Team Mbr Placeholder -->
-            <td>${claim.w9Attached || ''}</td>
+            <td></td> <td>${claim.w9Attached || ''}</td>
             <td>${claim.tinHasW9InPV || 'N/A'}</td>
             <td>${claim.pvApproved || ''}</td>
             <td>${claim.pvSource || ''}</td>
-            <td></td> <!-- PV Updated (Y/N) Placeholder -->
-            <td></td> <!-- Notes Placeholder -->
-            <td>${claim.claimId || 'N/A'}</td>
+            <td></td> <td></td> <td>${claim.claimId || 'N/A'}</td>
             <td>${claim.age || 0}</td>
             <td>$${(claim.netPayment || 0).toFixed(2)}</td>
             <td>${claim.providerName || 'N/A'}</td>
