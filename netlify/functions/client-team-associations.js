@@ -17,12 +17,18 @@ exports.handler = async function(event) {
             case 'GET': {
                 if (!config_id) {
                     const result = await pool.query('SELECT config_id, team_id FROM client_team_associations;');
+                    
+                    // DIAGNOSTIC LOG ADDED HERE:
+                    log('INFO', functionName, `DB Query returned ${result.rows.length} total associations.`, { rowCount: result.rows.length });
+                    // END DIAGNOSTIC LOG
+
                     return { statusCode: 200, body: JSON.stringify(result.rows) };
                 }
                 const result = await pool.query('SELECT team_id FROM client_team_associations WHERE config_id = $1;', [config_id]);
                 return { statusCode: 200, body: JSON.stringify(result.rows.map(r => r.team_id)) };
             }
             case 'POST': {
+                // ... (POST logic unchanged)
                 const { config_id, team_ids } = JSON.parse(event.body);
                 if (!config_id || !Array.isArray(team_ids)) {
                     log('WARN', functionName, 'Bad Request: Missing config_id or team_ids array.', { body: event.body });
