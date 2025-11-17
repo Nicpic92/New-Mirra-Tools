@@ -186,11 +186,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 safeApiCall(API.CLIENT_TEAM) // This returns array of IDs: [1, 5]
             ]);
             
-            // FIX: Ensure assignment uses Array.isArray and treat clientTeams as an ID array
-            state.allTeams = Array.isArray(teams) ? teams : [];
-            state.allCategories = Array.isArray(categories) ? categories : [];
-            state.allClientConfigs = Array.isArray(configs) ? configs : [];
-            // Treat clientTeams as an ID array—the original code failed here by assuming it was an array of objects with a length property
+            // FIX: This is the critical section. We check if the result is an array AND non-empty
+            // We use the direct result (which should be an array) and rely on the server logs for confirmation.
+            state.allTeams = Array.isArray(teams) && teams.length > 0 ? teams : [];
+            state.allCategories = Array.isArray(categories) && categories.length > 0 ? categories : [];
+            state.allClientConfigs = Array.isArray(configs) && configs.length > 0 ? configs : [];
+            // The clientTeams endpoint returns an array of IDs, we just check if it's an array.
             state.allClientTeamAssociations = Array.isArray(clientTeams) ? clientTeams : [];
             
             // Log final counts for diagnostic purposes
