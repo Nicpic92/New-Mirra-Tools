@@ -227,7 +227,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     /**
      * Fetches the specific edit and note rules for a given client configuration ID.
-     * @param {string} configId The ID of the configuration.
+     * @param {string} configId The ID of the of the configuration.
      */
     async function loadRulesForConfig(configId) {
         if (!configId) {
