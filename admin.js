@@ -186,12 +186,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 safeApiCall(API.CLIENT_TEAM) // This returns array of IDs: [1, 5]
             ]);
             
-            // FIX: This is the critical section. We check if the result is an array AND non-empty
-            // We use the direct result (which should be an array) and rely on the server logs for confirmation.
-            state.allTeams = Array.isArray(teams) && teams.length > 0 ? teams : [];
-            state.allCategories = Array.isArray(categories) && categories.length > 0 ? categories : [];
-            state.allClientConfigs = Array.isArray(configs) && configs.length > 0 ? configs : [];
-            // The clientTeams endpoint returns an array of IDs, we just check if it's an array.
+            // FIX: The original code was too strict, discarding valid empty arrays.
+            // This now correctly handles cases where the database tables are empty.
+            state.allTeams = Array.isArray(teams) ? teams : [];
+            state.allCategories = Array.isArray(categories) ? categories : [];
+            state.allClientConfigs = Array.isArray(configs) ? configs : [];
             state.allClientTeamAssociations = Array.isArray(clientTeams) ? clientTeams : [];
             
             // Log final counts for diagnostic purposes
